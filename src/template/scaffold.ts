@@ -167,8 +167,8 @@ function harness(iface: Interface): string {
   const portEnv = JSON.stringify(iface.port?.env ?? "PORT");
   const defaultPort = iface.port?.default ?? 3000;
   return `// Test harness: starts the built program the way the spec says it is run.
-import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { closeSync, mkdtempSync, openSync, rmSync } from "node:fs";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -188,6 +188,36 @@ function command(extra: string[]): { cmd: string; args: string[]; shell: boolean
   return { cmd: "npm", args: ["--prefix", ROOT, ...INVOCATION.args, ...extra], shell: process.platform === "win32" };
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Kills the whole process tree: \`npm start\` runs the real program as a child of npm. */
+function kill(child: ChildProcess): void {
+  if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
+  if (process.platform === "win32") spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+  else {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      child.kill("SIGKILL");
+    }
+  }
+}
+
+/** One default-port server at a time across every test process on the machine. */
+async function lockDefaultPort(): Promise<() => void> {
+  const file = join(tmpdir(), \`harness-port-\${DEFAULT_PORT}.lock\`);
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      closeSync(openSync(file, "wx"));
+      return () => rmSync(file, { force: true });
+    } catch {
+      if (Date.now() > deadline) rmSync(file, { force: true });
+      else await sleep(200);
+    }
+  }
+}
+
 /** A fresh empty directory, for programs that read or write files in their working directory. */
 export function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "case-"));
@@ -197,13 +227,13 @@ export function tempDir(): string {
 export function runCli(args: string[], opts: { stdin?: string; env?: Record<string, string>; cwd?: string; timeoutMs?: number } = {}): Promise<RunResult> {
   const { cmd, args: argv, shell } = command(args);
   return new Promise((done) => {
-    const child = spawn(cmd, argv, { cwd: opts.cwd ?? ROOT, env: { ...process.env, ...opts.env }, shell });
+    const child = spawn(cmd, argv, { cwd: opts.cwd ?? ROOT, env: { ...process.env, ...opts.env }, shell, detached: process.platform !== "win32" });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
+      kill(child);
       done({ code: -1, stdout, stderr: stderr + "\\n[harness] timed out" });
     }, opts.timeoutMs ?? 10_000);
     child.on("close", (code) => {
@@ -242,9 +272,21 @@ export type Server = { baseUrl: string; port: number; output(): string; stop(): 
 export async function startServer(opts: { env?: Record<string, string>; cwd?: string; useDefaultPort?: boolean } = {}): Promise<Server> {
   const port = opts.useDefaultPort ? DEFAULT_PORT : await freePort();
   const env: Record<string, string | undefined> = { ...process.env, ...opts.env, [PORT_ENV]: String(port) };
-  if (opts.useDefaultPort) delete env[PORT_ENV];
+  let release = () => {};
+  if (opts.useDefaultPort) {
+    delete env[PORT_ENV];
+    release = await lockDefaultPort();
+    const until = Date.now() + 10_000;
+    while (await canConnect(port)) {
+      if (Date.now() > until) {
+        release();
+        throw new Error(\`port \${port} is already in use by another process, so the default-port test cannot run\`);
+      }
+      await sleep(200);
+    }
+  }
   const { cmd, args, shell } = command([]);
-  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env, shell });
+  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env, shell, detached: process.platform !== "win32" });
   let output = "";
   let exited = false;
   child.stdout.on("data", (d) => (output += d));
@@ -252,12 +294,22 @@ export async function startServer(opts: { env?: Record<string, string>; cwd?: st
   child.on("exit", () => (exited = true));
   const deadline = Date.now() + 10_000;
   while (!(await canConnect(port))) {
-    if (exited) throw new Error(\`server exited before listening on \${PORT_ENV}=\${port}:\\n\${output}\`);
+    if (exited) {
+      release();
+      throw new Error(\`server exited before listening on \${PORT_ENV}=\${port}:\\n\${output}\`);
+    }
     if (Date.now() > deadline) {
-      child.kill("SIGKILL");
+      kill(child);
+      release();
       throw new Error(\`server did not listen on \${PORT_ENV}=\${port} within 10 s:\\n\${output}\`);
     }
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
+  }
+  // Something answers: make sure it is this server, not one that crashed on a port someone else holds.
+  await sleep(150);
+  if (exited) {
+    release();
+    throw new Error(\`server exited right after starting on \${PORT_ENV}=\${port}:\\n\${output}\`);
   }
   return {
     baseUrl: \`http://127.0.0.1:\${port}\`,
@@ -265,9 +317,13 @@ export async function startServer(opts: { env?: Record<string, string>; cwd?: st
     output: () => output,
     stop: () =>
       new Promise<void>((done) => {
-        if (exited) return done();
-        child.once("exit", () => done());
-        child.kill("SIGKILL");
+        const finish = () => {
+          release();
+          done();
+        };
+        if (exited) return finish();
+        child.once("exit", finish);
+        kill(child);
       }),
   };
 }

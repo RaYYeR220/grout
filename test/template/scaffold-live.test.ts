@@ -16,7 +16,7 @@ process.stdout.write(\`Hello, \${name}!\\n\`);
 `;
 
 const SERVER = `import { createServer } from "node:http";
-const port = Number(process.env.APP_PORT ?? 8080);
+const port = Number(process.env.APP_PORT ?? 18089);
 createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify({ path: req.url }));
@@ -45,10 +45,20 @@ test("[R1] echoes the path", async () => {
   const r = await fetch(s.baseUrl + "/x");
   expect(await r.json()).toEqual({ path: "/x" });
 });
+test("[R3] a foreign process on the default port is reported, not silently tested", async () => {
+  const { createServer } = await import("node:net");
+  const squatter = createServer().listen(18089, "0.0.0.0");
+  await new Promise((r) => squatter.once("listening", r));
+  try {
+    await expect(startServer({ useDefaultPort: true })).rejects.toThrow(/already in use/);
+  } finally {
+    await new Promise((r) => squatter.close(r));
+  }
+}, 30_000);
 test("[R2] without the port variable it listens on the default port", async () => {
   const d = await startServer({ useDefaultPort: true });
   try {
-    expect(d.port).toBe(8080);
+    expect(d.port).toBe(18089);
     expect((await fetch(d.baseUrl + "/y")).status).toBe(200);
   } finally {
     await d.stop();
@@ -84,9 +94,13 @@ describe.skipIf(!slow)("generated project runs its black-box tests (GROUT_SLOW_T
     const viaShimRun = await sb.exec(shimFiles, "npx vitest run --reporter=json --outputFile=.grout/vitest.json", { collect: [".grout/vitest.json"] });
     expect(parseVitestJson(viaShimRun.outputs[".grout/vitest.json"] ?? "", "").map((x) => x.status)).toEqual(["pass", "pass"]);
 
-    const http: Ledger = { ...cli, interface: { kind: "http", entry: "src/server.ts", invocation: "node dist/server.js", port: { env: "APP_PORT", default: 8080 }, notes: [] } };
+    const http: Ledger = { ...cli, interface: { kind: "http", entry: "src/server.ts", invocation: "node dist/server.js", port: { env: "APP_PORT", default: 18089 }, notes: [] } };
     const httpFiles = scaffold(http, base, "api").set("src/server.ts", SERVER).set("test/acceptance/api.test.ts", HTTP_TEST);
     const h = await sb.exec(httpFiles, "npx vitest run --reporter=json --outputFile=.grout/vitest.json", { collect: [".grout/vitest.json"] });
-    expect(parseVitestJson(h.outputs[".grout/vitest.json"] ?? "", "").map((x) => x.status)).toEqual(["pass", "pass"]);
+    expect(parseVitestJson(h.outputs[".grout/vitest.json"] ?? "", "").map((x) => [x.title, x.status])).toEqual([
+      ["[R1] echoes the path", "pass"],
+      ["[R3] a foreign process on the default port is reported, not silently tested", "pass"],
+      ["[R2] without the port variable it listens on the default port", "pass"],
+    ]);
   }, 240_000);
 });
