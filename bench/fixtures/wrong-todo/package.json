@@ -1,0 +1,9 @@
+{
+  "name": "todo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "todo": "dist/cli.js"
+  }
+}

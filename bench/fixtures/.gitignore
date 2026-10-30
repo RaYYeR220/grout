@@ -1,0 +1,2 @@
+# The root .gitignore drops every dist/; these fixtures ship plain JS there, with no build step.
+!dist/
