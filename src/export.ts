@@ -14,6 +14,7 @@ export type RunSummary = {
   costUsd: number;
   agents: number;
   mode: string;
+  cloudUrl?: string;
 };
 
 const fmtUsd = (n: number) => `$${n.toFixed(4)}`;
@@ -38,7 +39,8 @@ Built by grout, run \`${s.runId}\`, candidate ${s.candidate}, mode ${s.mode}.
 
 - **Status: ${s.status.green ? "GREEN" : "INCOMPLETE"}**: ${s.reason}
 - Wall time: ${(s.wallMs / 1000).toFixed(1)} s · model cost: ${fmtUsd(s.costUsd)} · agents spawned: ${s.agents}
-- Human steps: ${state.humanSteps.length} (see HUMAN_STEPS.md)
+- Human steps: ${state.humanSteps.length} (see HUMAN_STEPS.md)${s.cloudUrl ? `
+- Live session in Mozaik Cloud: ${s.cloudUrl}` : ""}
 ${blockers.length ? `\n## What blocks a green release\n\n${blockers.join("\n")}\n` : ""}
 ## Requirements
 

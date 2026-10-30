@@ -11,6 +11,7 @@ import { withEnvDoctor } from "./participants/env-doctor.js";
 import { Supervisor } from "./participants/supervisor.js";
 import { Librarian } from "./participants/librarian.js";
 import { createMemoryStore, type MemoryStore } from "./memory/store.js";
+import { attachCloud } from "./cloud.js";
 import { EV } from "./bus/events.js";
 import { ReviewDesk } from "./participants/review.js";
 import { Tracer } from "./participants/tracer.js";
@@ -114,6 +115,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   const tracer = new Tracer(fc, join(runDir, "trace.jsonl"));
   fc.rt.join(tracer);
   opts.observe?.(fc);
+  const cloud = await attachCloud(fc, env);
 
   const crews = new Map<string, { broker: Broker; verifier: Verifier }>();
   for (const id of candidateIds) {
@@ -142,6 +144,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   const finishes = await conductor.done;
   supervisor.dispose();
   await librarian.distill().catch(() => undefined);
+  await cloud?.end().catch(() => undefined);
   const best =
     finishes.find((f) => f.candidate === conductor.selection?.winner) ??
     [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];
@@ -158,7 +161,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     state,
     cand,
     outDir,
-    { runId, title, candidate: best.candidate, status: best.status, reason: best.reason, wallMs, costUsd: state.budget.spent(), agents: state.agents.size, mode },
+    { runId, title, candidate: best.candidate, status: best.status, reason: best.reason, wallMs, costUsd: state.budget.spent(), agents: state.agents.size, mode, cloudUrl: cloud?.url },
     best.dist,
     { trace: tracer.path, report: reportPath },
   );
