@@ -174,9 +174,14 @@ export function disputeTestTool(t: ToolCtx): Tool {
 }
 
 /** A structured hand-in (ledger, blueprint, review, verdict, tests): validated, then passed to whoever spawned the agent. */
-export function submitTool<S extends z.ZodType>(name: string, description: string, schema: S, accept: (value: z.infer<S>) => string | undefined): Tool {
-  return defineTool(name, description, schema, (value) => {
-    const problem = accept(value);
+export function submitTool<S extends z.ZodType>(
+  name: string,
+  description: string,
+  schema: S,
+  accept: (value: z.infer<S>) => string | undefined | Promise<string | undefined>,
+): Tool {
+  return defineTool(name, description, schema, async (value) => {
+    const problem = await accept(value);
     return problem ? `ERROR: ${problem}. Fix it and call ${name} again.` : `OK: ${name} accepted. Reply with a one-line summary now.`;
   });
 }
