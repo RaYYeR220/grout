@@ -12,6 +12,15 @@ export const PERSISTENT_AFTER = 3;
 
 export type VerifierRun = { rev: number; pass: number; fail: number; tscErrors: number; at: number };
 
+/** A test that passed in the previous run and fails now was broken by a recent change: say so. */
+export function markRegressions(previous: ReadonlyMap<string, string>, results: VitestResult[], previousRev: number): VitestResult[] {
+  return results.map((r) =>
+    (r.status === "fail" || r.status === "error") && previous.get(`${r.file} > ${r.title}`) === "pass"
+      ? { ...r, failure: `REGRESSION: this test passed at rev ${previousRev} and fails now, so a recent change broke it.\n${r.failure ?? ""}` }
+      : r,
+  );
+}
+
 /** Runs the whole suite on the shared codebase as it changes, and sends every failure to whoever can fix it. */
 export class Verifier extends Actor {
   private timer?: NodeJS.Timeout;
@@ -71,7 +80,8 @@ export class Verifier extends Actor {
       for (const r of [tsc, test]) fc.bus.emit(EV.sandboxCommand, this.getId(), { cmd: r.cmd, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
       const tscErrors = parseTsc(tsc.stdout + tsc.stderr);
       const report = test.outputs[REPORT_PATH];
-      const results: VitestResult[] = report ? parseVitestJson(report, "") : [];
+      const previous = new Map(cand.matrix.all().map((t) => [t.id, t.status] as const));
+      const results: VitestResult[] = markRegressions(previous, report ? parseVitestJson(report, "") : [], this.lastRun?.rev ?? 0);
       const records: TestRecord[] = results.map((r) => ({
         id: `${r.file} > ${r.title}`,
         file: r.file,
