@@ -32,7 +32,8 @@ const STATUS: Record<string, TestStatus> = { passed: "pass", failed: "fail", ski
 function relative(path: string, root: string): string {
   const p = path.replace(/\\/g, "/");
   const r = root.replace(/\\/g, "/").replace(/\/$/, "");
-  if (p.toLowerCase().startsWith(`${r.toLowerCase()}/`)) return p.slice(r.length + 1);
+  // An empty root would otherwise match every absolute path and only strip its leading slash.
+  if (r !== "" && p.toLowerCase().startsWith(`${r.toLowerCase()}/`)) return p.slice(r.length + 1);
   const m = p.match(/(?:^|\/)((?:src|test)\/.*)$/);
   return m ? m[1] : p;
 }

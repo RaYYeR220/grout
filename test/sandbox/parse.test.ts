@@ -47,6 +47,13 @@ describe("parseVitestJson", () => {
     ]);
   });
 
+  test("container paths are made relative even when the snapshot root is unknown", () => {
+    const report = JSON.stringify({
+      testResults: [{ name: "/runs/40/test/acceptance/inventory.test.ts", status: "failed", assertionResults: [{ title: "[R2] x", status: "failed", failureMessages: ["boom\n    at /runs/40/src/store.ts:3:1"] }] }],
+    });
+    expect(parseVitestJson(report, "")).toEqual([{ file: "test/acceptance/inventory.test.ts", title: "[R2] x", status: "fail", failure: "boom\n    at /runs/40/src/store.ts:3:1", stackFiles: ["src/store.ts"] }]);
+  });
+
   test("garbage input is reported, not thrown", () => {
     expect(parseVitestJson("not json", "/x")).toEqual([
       expect.objectContaining({ title: "(no test report)", status: "error" }),

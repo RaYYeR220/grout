@@ -24,6 +24,7 @@ export type ReportModel = {
     staleRefusals: number;
     gateRefusals: number;
     humanSteps: number;
+    estimatedCalls: number;
   };
   lanes: { lane: string; role: Role; spans: Span[] }[];
   tasks: TaskRow[];
@@ -54,6 +55,7 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
   let outTok = 0;
   let cost = 0;
   let humanSteps = 0;
+  let estimated = 0;
   const who = (l: TraceLine) => (l.slot ? `${l.slot}${l.taskId ? `(${l.taskId})` : ""}` : l.producer);
   const task = (id: string, candidate = "A") => {
     let t = tasks.get(id);
@@ -77,6 +79,7 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
         inTok += p.inputTokens ?? 0;
         outTok += p.outputTokens ?? 0;
         cost += p.costUsd ?? 0;
+        if (p.costSource && p.costSource !== "provider") estimated += 1;
         const s = spans.get(p.agentId);
         if (s) {
           s.costUsd += p.costUsd ?? 0;
@@ -182,6 +185,7 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
       staleRefusals: out.stale.length,
       gateRefusals: out.gates.length,
       humanSteps,
+      estimatedCalls: estimated,
     },
     lanes,
     tasks: [...tasks.values()],

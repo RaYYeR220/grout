@@ -69,7 +69,7 @@ export type EventPayloads = {
   "env.remediated": { pattern: string; action: string; attempt: number };
   "budget.exceeded": { spentUsd: number; capUsd: number };
   "sandbox.command": { cmd: string; exitCode: number; ms: number; timedOut: boolean; candidate?: string };
-  "llm.call": { agentId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; ms: number };
+  "llm.call": { agentId: string; model: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; costSource: "provider" | "table" | "unknown"; ms: number };
   "release.checked": Cand & ReleaseStatus;
   "candidates.compared": { winner: string; scores: Record<string, number>; reason: string; disagreements: number };
   "human.nudge": { text: string; to?: string };

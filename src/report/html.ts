@@ -199,7 +199,7 @@ ${timeline(m)}
 <h2>Recoveries and messages</h2>
 <div class="card"><ul class="log">${m.events.map((e) => `<li><span class="mono">${secs(e.t - r.start)}</span> · <b>${esc(e.kind)}</b> · ${esc(e.detail.slice(0, 200))}</li>`).join("") || "<li>None.</li>"}</ul></div>
 
-<p class="sub" style="margin-top:40px">${r.llmCalls} model calls · ${r.inputTokens.toLocaleString("en")} input / ${r.outputTokens.toLocaleString("en")} output tokens · costs are the provider's own per-call figures where it reports them.</p>
+<p class="sub" style="margin-top:40px">${r.llmCalls} model calls · ${r.inputTokens.toLocaleString("en")} input / ${r.outputTokens.toLocaleString("en")} output tokens · ${r.estimatedCalls === 0 ? "every cost is the provider's own per-call figure." : `${r.estimatedCalls} of ${r.llmCalls} call costs are estimates from a price table (the provider did not report them).`}</p>
 </main>
 <div class="tip" id="tip"></div>
 <script>

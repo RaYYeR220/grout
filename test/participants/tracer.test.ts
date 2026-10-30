@@ -26,7 +26,7 @@ describe("Tracer", () => {
     const lines = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     const calls = lines.filter((l) => l.type === "llm.call");
     expect(calls).toHaveLength(2);
-    expect(calls.every((c) => c.payload.costUsd === 0.25 && c.payload.ms >= 10)).toBe(true);
+    expect(calls.every((c) => c.payload.costUsd === 0.25 && c.payload.ms >= 10 && c.payload.costSource === "provider")).toBe(true);
     expect(state.budget.byTask()).toEqual({ T1: 0.25, T2: 0.25 });
     expect(Math.max(...lines.map((l) => JSON.stringify(l).length))).toBeLessThan(5000);
     expect(lines.find((l) => l.type === "interception.started")?.payload).toEqual({ nextStateId: "message_received" });

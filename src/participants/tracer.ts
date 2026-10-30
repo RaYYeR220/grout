@@ -99,6 +99,7 @@ export class Tracer extends Actor {
       outputTokens: p.tokenUsage?.outputTokens ?? 0,
       cachedTokens: p.tokenUsage?.inputTokenDetails?.cached_tokens ?? 0,
       costUsd: cost.usd,
+      costSource: cost.source,
       ms: start ? t - start : 0,
     });
     if (!this.budgetAnnounced && this.fc.state.budget.exceeded()) {
