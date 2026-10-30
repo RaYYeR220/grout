@@ -57,7 +57,7 @@ export type EventPayloads = {
   "tests.submitted": Cand & { slot: string; summary: string };
   "tests.ran": Cand & { rev: number; pass: number; fail: number; total: number; tscErrors: number; uncovered: string[]; ms: number };
   "test.failed": Cand & { testId?: string; requirementIds: string[]; to: string; message: string };
-  "test.disputed": Cand & { testId: string; reason: string; by: string };
+  "test.disputed": Cand & { testId: string; reason: string; by: string; agentId?: string };
   "verdict.issued": Cand & { testId: string; ruling: "test-wrong" | "code-wrong" | "ambiguous"; reasoning: string; interpretation?: string };
   "change.requested": Cand & { path: string; change: string; from: string; to: string };
   "inbox.delivered": { agentId: string; count: number };

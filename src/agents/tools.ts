@@ -25,7 +25,7 @@ export const REPORT_PATH = ".grout/vitest.json";
 const SUMMARY_LIMIT = 4000;
 
 export function defineTool<S extends z.ZodType>(name: string, description: string, schema: S, run: (args: z.infer<S>) => Promise<string> | string): Tool {
-  const { $schema: _drop, ...parameters } = z.toJSONSchema(schema) as Record<string, unknown>;
+  const { $schema: _drop, ...parameters } = z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }) as Record<string, unknown>;
   return {
     type: "function",
     name,
@@ -167,7 +167,7 @@ export function disputeTestTool(t: ToolCtx): Tool {
     "If an acceptance test contradicts the spec, dispute it with the spec quote that proves it. An arbiter rules; do not edit tests yourself.",
     z.object({ test: z.string(), reason: z.string() }),
     ({ test, reason }) => {
-      t.fc.bus.emit(EV.testDisputed, t.self.id, { candidate: t.candidate, testId: test, reason, by: labelOf(t.fc.state, t.self.id) });
+      t.fc.bus.emit(EV.testDisputed, t.self.id, { candidate: t.candidate, testId: test, reason, by: labelOf(t.fc.state, t.self.id), agentId: t.self.id });
       return "OK: the arbiter will rule and you will be told. Meanwhile continue with anything else in your task.";
     },
   );
