@@ -29,6 +29,7 @@ export function runMarkdown(state: FactoryState, cand: CandidateState, s: RunSum
   const blockers = [
     ...s.status.failingTests.map((t) => `- failing test: ${t}`),
     ...s.status.uncovered.map((r) => `- no test for ${r}`),
+    ...s.status.failingRequirements.map((r) => `- requirement ${r} has failing or skipped tests`),
     ...s.status.unapproved.map((t) => `- task not approved: ${t}`),
     ...(s.status.cleanRoom && !s.status.cleanRoom.ok ? [`- clean-room check failed at: ${s.status.cleanRoom.step}`] : []),
   ];

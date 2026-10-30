@@ -20,7 +20,7 @@ export type ToolCtx = {
 };
 
 export const TYPECHECK_CMD = "npx tsc --noEmit -p .";
-export const TEST_CMD = "npx vitest run --reporter=json --outputFile=.grout/vitest.json";
+export const TEST_CMD = "npx vitest run --reporter=default --reporter=json --outputFile.json=.grout/vitest.json";
 export const REPORT_PATH = ".grout/vitest.json";
 const SUMMARY_LIMIT = 4000;
 
@@ -125,11 +125,12 @@ export function summarizeTsc(output: string, surface: string[]): string {
 
 export function summarizeTests(report: string | undefined, rawOutput: string): string {
   if (!report) return clip(`tests: no report was produced (the suite probably failed to start). Output:\n${rawOutput.slice(-2500)}`);
-  const results = parseVitestJson(report, "");
+  const results = parseVitestJson(report, "", rawOutput);
   const pass = results.filter((r) => r.status === "pass").length;
-  const bad = results.filter((r) => r.status === "fail" || r.status === "error");
-  const lines = [`tests: ${pass} passed, ${bad.length} failing (of ${results.length})`];
-  for (const r of bad) lines.push(`- ${r.title} (${r.file}): ${(r.failure ?? "").split("\n").slice(0, 6).join(" | ").slice(0, 500)}`);
+  const skipped = results.filter((r) => r.status === "skip").length;
+  const bad = results.filter((r) => r.status === "fail" || r.status === "error").sort((a, b) => Number(b.status === "error") - Number(a.status === "error"));
+  const lines = [`tests: ${pass} passed, ${bad.length} failing, ${skipped} skipped (of ${results.length})`];
+  for (const r of bad) lines.push(`- ${r.title} (${r.file}): ${(r.failure ?? "").split("\n").slice(0, r.status === "error" ? 12 : 6).join(" | ").slice(0, 900)}`);
   return clip(lines.join("\n"));
 }
 

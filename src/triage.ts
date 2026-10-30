@@ -57,6 +57,12 @@ export function triage(
     const line = `test "${t.title}" (${t.file}) failed:\n${excerpt}`;
     const reqIds = requirementIdsOf(t.title);
     const author = authorOf(t.file);
+    if (t.status === "error" && t.title.startsWith("(suite did not run")) {
+      // A hook failed: usually the program did not start, sometimes the test's own setup is wrong.
+      for (const o of tasksCovering(cand, reqIds)) add({ kind: "task", taskId: o }, line, reqIds, testId);
+      if (author) add({ kind: "test-author", slot: author }, line, reqIds, testId);
+      continue;
+    }
     if (t.status === "error" || reqIds.length === 0) {
       if (author) add({ kind: "test-author", slot: author }, reqIds.length ? line : `${line}\n(this test has no [R#] requirement id in its title)`, reqIds, testId);
       continue;

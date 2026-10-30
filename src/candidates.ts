@@ -48,7 +48,7 @@ export async function runUnion(fc: FactoryCtx, target: string): Promise<VitestRe
   if (!sandbox) return [];
   const r = await sandbox.exec(files, TEST_CMD, { collect: [REPORT_PATH], timeoutMs: 300_000 });
   fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[combined suite on ${target}] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate: target });
-  return r.outputs[REPORT_PATH] ? parseVitestJson(r.outputs[REPORT_PATH], "") : [];
+  return r.outputs[REPORT_PATH] ? parseVitestJson(r.outputs[REPORT_PATH], "", r.stdout + r.stderr) : [];
 }
 
 /** One arbiter per disagreement: does the other team's test or this team's code follow the spec? */

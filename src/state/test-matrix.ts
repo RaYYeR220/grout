@@ -10,10 +10,13 @@ export type TestRecord = {
   rev: number;
 };
 
-/** Requirement ids live in test titles: "[R3] ..." or "[R3,R7] ...". */
+/** Requirement ids live in test titles: "[R3] ..." or "[R3,R7] ...", in the describe block and the test alike. */
 export function requirementIdsOf(title: string): string[] {
-  const m = title.match(/\[(R\d+(?:\s*,\s*R\d+)*)\]/);
-  return m ? m[1].split(",").map((s) => s.trim()) : [];
+  const ids: string[] = [];
+  for (const m of title.matchAll(/\[(R\d+(?:\s*,\s*R\d+)*)\]/g)) {
+    for (const id of m[1].split(",").map((s) => s.trim())) if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 export class TestMatrix {

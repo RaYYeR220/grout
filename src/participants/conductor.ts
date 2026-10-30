@@ -6,7 +6,7 @@ import { ANALYST, analystMessage, architectInstruction, architectMessage, render
 import { reconcile } from "../agents/reconcile.js";
 import { ROLE_LIMITS } from "../agents/roles.js";
 import { spawnAgent } from "../agents/spawn.js";
-import { REPORT_PATH, fileTools, submitTool } from "../agents/tools.js";
+import { REPORT_PATH, TEST_CMD, fileTools, submitTool } from "../agents/tools.js";
 import type { FactoryCtx } from "../runtime.js";
 import { parseVitestJson } from "../sandbox/parse.js";
 import { BlueprintSchema } from "../state/blueprint.js";
@@ -24,7 +24,7 @@ import type { Verifier } from "./verifier.js";
 export const CLEAN_ROOM = [
   "npm ci --ignore-scripts --no-audit --no-fund --loglevel=error",
   "npm run build",
-  "npx vitest run --reporter=json --outputFile=.grout/vitest.json",
+  TEST_CMD,
 ];
 
 export type Finish = { candidate: string; status: ReleaseStatus; reason: string; dist: Record<string, string> };
@@ -227,7 +227,7 @@ export class Conductor extends Actor {
     for (const r of results) fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[clean room] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
     const failed = results.find((r) => r.exitCode !== 0);
     const last = results[results.length - 1];
-    const tests = last?.outputs[REPORT_PATH] ? parseVitestJson(last.outputs[REPORT_PATH], "") : [];
+    const tests = last?.outputs[REPORT_PATH] ? parseVitestJson(last.outputs[REPORT_PATH], "", last.stdout + last.stderr) : [];
     const testsGreen = tests.length > 0 && tests.every((t) => t.status === "pass" || t.status === "skip");
     if (!failed && testsGreen) {
       const dist = Object.fromEntries(Object.entries(last.outputs).filter(([p]) => p.startsWith("dist/")));

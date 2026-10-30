@@ -10,7 +10,8 @@ export function releaseCheck(cand: CandidateState, ledger: Ledger, cleanRoom?: R
   const testable = ledger.requirements.filter((r) => r.kind !== "non-functional").map((r) => r.id);
   const untestable = ledger.requirements.filter((r) => r.kind === "non-functional").map((r) => r.id);
   const { uncovered, failing } = cand.matrix.coverage(testable);
-  const failingTests = cand.matrix.all().filter((r) => r.status !== "pass" && r.status !== "skip").map((r) => r.title);
+  // A skipped test proves nothing: it blocks a green release like a failing one.
+  const failingTests = cand.matrix.all().filter((r) => r.status !== "pass").map((r) => r.title);
   const unapproved = (cand.board?.tasks() ?? []).filter((t) => t.status !== "approved").map((t) => t.id);
   const green =
     failingTests.length === 0 && uncovered.length === 0 && failing.length === 0 && unapproved.length === 0 && cand.board !== undefined && (cleanRoom ? cleanRoom.ok : true);

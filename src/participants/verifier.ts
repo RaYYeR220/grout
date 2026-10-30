@@ -81,7 +81,7 @@ export class Verifier extends Actor {
       const tscErrors = parseTsc(tsc.stdout + tsc.stderr);
       const report = test.outputs[REPORT_PATH];
       const previous = new Map(cand.matrix.all().map((t) => [t.id, t.status] as const));
-      const results: VitestResult[] = markRegressions(previous, report ? parseVitestJson(report, "") : [], this.lastRun?.rev ?? 0);
+      const results: VitestResult[] = markRegressions(previous, report ? parseVitestJson(report, "", test.stdout + test.stderr) : [], this.lastRun?.rev ?? 0);
       const records: TestRecord[] = results.map((r) => ({
         id: `${r.file} > ${r.title}`,
         file: r.file,

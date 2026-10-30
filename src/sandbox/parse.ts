@@ -1,4 +1,4 @@
-import type { TestStatus } from "../state/test-matrix.js";
+import { requirementIdsOf, type TestStatus } from "../state/test-matrix.js";
 
 export type TscError = { file: string; line: number; col: number; code: string; message: string };
 export type VitestResult = { file: string; title: string; status: TestStatus; failure?: string; stackFiles: string[] };
@@ -49,7 +49,25 @@ function stackFiles(text: string, root: string): string[] {
   return out;
 }
 
-export function parseVitestJson(json: string, root: string): VitestResult[] {
+/** The console reporter's account of a failed suite: the lines after "FAIL  <file>". */
+function suiteFailure(consoleOutput: string, file: string): string | undefined {
+  const lines = consoleOutput.replace(/\x1b\[[0-9;]*m/g, "").split(/\r?\n/);
+  const start = lines.findIndex((l) => l.includes("FAIL") && l.includes(file));
+  if (start === -1) return undefined;
+  const out: string[] = [];
+  for (const l of lines.slice(start, start + 30)) {
+    if (out.length > 0 && (/^\s*FAIL\s/.test(l) || l.includes("⎯⎯⎯"))) break;
+    out.push(l);
+  }
+  return out.join("\n").trim();
+}
+
+/**
+ * vitest reports the tests of a suite whose beforeAll/afterAll hook threw as "skipped", with the
+ * error only on the console. Such a suite becomes one error record that carries the console's
+ * account and every requirement id of the suite, so the failure can be seen and routed.
+ */
+export function parseVitestJson(json: string, root: string, consoleOutput = ""): VitestResult[] {
   let report: VitestReport;
   try {
     report = JSON.parse(json) as VitestReport;
@@ -63,6 +81,17 @@ export function parseVitestJson(json: string, root: string): VitestResult[] {
       const failure = file.message ?? "test file failed to load";
       results.push({ file: rel, title: "(file failed to load)", status: "error", failure, stackFiles: stackFiles(failure, root) });
       continue;
+    }
+    if (file.status === "failed" && file.assertionResults.length > 0 && !file.assertionResults.some((a) => a.status === "failed")) {
+      const ids = [...new Set(file.assertionResults.flatMap((a) => requirementIdsOf([...(a.ancestorTitles ?? []), a.title].join(" > "))))];
+      const failure = suiteFailure(consoleOutput, rel) ?? (file.message || "a beforeAll/afterAll hook failed; no console output was captured");
+      results.push({
+        file: rel,
+        title: `(suite did not run: a hook failed)${ids.length ? ` [${ids.join(",")}]` : ""}`,
+        status: "error",
+        failure,
+        stackFiles: [...new Set([rel, ...stackFiles(failure, root)])],
+      });
     }
     for (const a of file.assertionResults) {
       const failure = (a.failureMessages ?? []).join("\n");
