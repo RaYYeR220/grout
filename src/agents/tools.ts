@@ -104,7 +104,7 @@ export function runCheckTool(t: ToolCtx): Tool {
       if (!sandbox) return "ERROR: no sandbox is configured for this run.";
       const files = t.fc.state.candidate(t.candidate).workspace.snapshot();
       const cmd = kind === "typecheck" ? TYPECHECK_CMD : `${TEST_CMD}${pattern ? ` ${pattern}` : ""}`;
-      const r = await sandbox.exec(files, cmd, { collect: [REPORT_PATH], timeoutMs: 180_000 });
+      const r = await sandbox.exec(files, cmd, { collect: [REPORT_PATH], timeoutMs: kind === "typecheck" ? 180_000 : 360_000 });
       t.fc.bus.emit(EV.sandboxCommand, t.self.id, { cmd, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate: t.candidate });
       if (r.timedOut) return `${kind}: TIMED OUT after ${Math.round(r.durationMs / 1000)} s. A test or the server probably never finishes; check for open handles and unclosed servers.`;
       return kind === "typecheck" ? summarizeTsc(r.stdout + r.stderr, t.surface ?? []) : summarizeTests(r.outputs[REPORT_PATH], r.stdout + r.stderr);

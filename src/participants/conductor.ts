@@ -241,7 +241,7 @@ export class Conductor extends Actor {
     const snapshot = cand.workspace.snapshot();
     // Near the deadline every step gets only its share of the time that is left.
     const left = fc.state.budget.deadlineMs !== undefined ? fc.state.budget.deadlineMs - Date.now() : Infinity;
-    const timeoutMs = Math.max(30_000, Math.min(300_000, Math.floor(left / steps.length)));
+    const timeoutMs = Math.max(30_000, Math.min(600_000, Math.floor(left / steps.length)));
     const results = await sandbox.cleanRoom(snapshot, steps, { collect: ["dist/", REPORT_PATH], timeoutMs });
     for (const r of results) fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[clean room] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
     const failed = results.find((r) => r.exitCode !== 0);

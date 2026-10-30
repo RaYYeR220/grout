@@ -87,7 +87,8 @@ export class Verifier extends Actor {
       const files = cand.workspace.snapshot();
       const started = Date.now();
       const tsc = await sandbox.exec(files, TYPECHECK_CMD, { timeoutMs: 120_000 });
-      const test = await sandbox.exec(files, TEST_CMD, { collect: [REPORT_PATH], timeoutMs: 240_000 });
+      // Suites that start the program through npm for every test can take minutes under load.
+      const test = await sandbox.exec(files, TEST_CMD, { collect: [REPORT_PATH], timeoutMs: 600_000 });
       for (const r of [tsc, test]) fc.bus.emit(EV.sandboxCommand, this.getId(), { cmd: r.cmd, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
       const tscErrors = parseTsc(tsc.stdout + tsc.stderr);
       const report = test.outputs[REPORT_PATH];
