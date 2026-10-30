@@ -40,6 +40,14 @@ describe("buildReportModel", () => {
     expect(m.run.costUsd).toBeCloseTo(0.015);
   });
 
+  test("run bounds use the earliest and latest timestamps, not line order", () => {
+    const shuffled = [trace[1], trace[0], ...trace.slice(2)];
+    const r = buildReportModel([{ ...trace[0], t: 1200 }, { ...trace[1], t: 900 }, ...trace.slice(2)]).run;
+    expect(r.start).toBe(900);
+    expect(r.wallMs).toBe(9500 - 900);
+    expect(shuffled).toHaveLength(trace.length);
+  });
+
   test("peak concurrency counts overlapping agents", () => {
     expect(m.run.peakConcurrency).toBe(2);
   });

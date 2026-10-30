@@ -15,7 +15,7 @@ export async function replay(runDir: string, speed = 20, write: (s: string) => v
   const file = runDir.endsWith(".jsonl") ? runDir : join(runDir, "trace.jsonl");
   const lines = readTrace(file);
   if (lines.length === 0) return;
-  const t0 = lines[0].t;
+  const t0 = Math.min(...lines.map((l) => l.t));
   let cost = 0;
   let prev = t0;
   for (const l of lines) {
@@ -26,7 +26,7 @@ export async function replay(runDir: string, speed = 20, write: (s: string) => v
     const wait = Math.min(1500, (l.t - prev) / speed);
     if (wait > 5) await new Promise((r) => setTimeout(r, wait));
     prev = l.t;
-    const s = Math.floor((l.t - t0) / 1000);
+    const s = Math.max(0, Math.floor((l.t - t0) / 1000));
     write(`[${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")} $${cost.toFixed(3)}] ${text}\n`);
   }
 }

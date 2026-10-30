@@ -40,8 +40,9 @@ type P = Record<string, any>;
 const ROLE_ORDER: Role[] = ["analyst", "architect", "builder", "test-author", "reviewer", "arbiter", "utility"];
 
 export function buildReportModel(lines: TraceLine[]): ReportModel {
-  const first = lines[0]?.t ?? 0;
-  const last = lines[lines.length - 1]?.t ?? first;
+  // Emits are deferred, so trace lines are in delivery order, not strictly in time order.
+  const first = lines.length ? Math.min(...lines.map((l) => l.t)) : 0;
+  const last = lines.length ? Math.max(...lines.map((l) => l.t)) : first;
   const started = lines.find((l) => l.type === "run.started")?.payload as P | undefined;
   const spans = new Map<string, Span>();
   const tasks = new Map<string, TaskRow>();
