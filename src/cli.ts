@@ -12,6 +12,7 @@ Usage:
   grout replay <runDir> [--speed N]  replay a recorded run in the terminal (no API key needed)
   grout report <runDir>              (re)build the HTML report of a run from its trace
   grout nudge <runDir> "<message>"   send a message to a running factory (logged as a human step)
+  grout bench [--specs a,b] [--build] run the hidden acceptance suites against factory outputs
   grout race [--runs N] [--builders K] [--seed S]   zero-token race: lost updates with and without the interlock
   grout doctor                       check Node, Docker and provider configuration
 
@@ -89,6 +90,32 @@ async function main(argv: string[]): Promise<number> {
     const out = join(runDir, "report.html");
     writeFileSync(out, renderHtml(buildReportModel(readTrace(join(runDir, "trace.jsonl")))));
     process.stdout.write(`${out}\n`);
+    return 0;
+  }
+
+  if (command === "bench") {
+    const { values } = parseArgs({ args: rest, options: { specs: { type: "string" }, outputs: { type: "string" }, build: { type: "boolean" }, json: { type: "string" } } });
+    const { benchRow, benchSpecs, benchTable } = await import("./bench.js");
+    const repo = process.cwd();
+    const outputs = values.outputs ?? "runs-out";
+    const specs = values.specs ? values.specs.split(",") : benchSpecs(repo);
+    const rows = [];
+    for (const spec of specs) {
+      const out = join(outputs, spec);
+      if (values.build) {
+        const { runFactory } = await import("./run.js");
+        await runFactory({ specPath: join("bench", "specs", `${spec}.md`), outDir: out });
+      }
+      if (!existsSync(join(out, "package.json"))) {
+        process.stderr.write(`skip ${spec}: no output in ${out} (use --build)\n`);
+        continue;
+      }
+      rows.push(benchRow(repo, spec, join(repo, out)));
+      process.stderr.write(`${spec}: ${rows.at(-1)!.hiddenPass}/${rows.at(-1)!.hiddenTotal}\n`);
+    }
+    const table = benchTable(rows);
+    process.stdout.write(`${table}\n`);
+    if (values.json) (await import("node:fs")).writeFileSync(values.json, `${JSON.stringify(rows, null, 2)}\n`);
     return 0;
   }
 
