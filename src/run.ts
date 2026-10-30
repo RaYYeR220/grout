@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { DefaultInferenceRunner, type InferenceRunner } from "@mozaik-ai/core";
 import { commitOutput, exportRun } from "./export.js";
@@ -15,6 +15,9 @@ import { Tracer } from "./participants/tracer.js";
 import { Verifier } from "./participants/verifier.js";
 import { createFactory, type FactoryCtx } from "./runtime.js";
 import { createSandbox, type SandboxPreference } from "./sandbox/index.js";
+import { renderHtml } from "./report/html.js";
+import { buildReportModel } from "./report/model.js";
+import { readTrace } from "./report/replay.js";
 import type { Sandbox } from "./sandbox/types.js";
 import { FactoryState, type ReleaseStatus } from "./state/factory-state.js";
 
@@ -132,6 +135,10 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   const wallMs = Date.now() - started;
   // Let the last trace lines land before copying the trace.
   await new Promise((r) => setTimeout(r, 200));
+  fc.bus.emit(EV.runFinished, "conductor", { candidate: best.candidate, status: best.status, outDir: resolve(opts.outDir) });
+  await new Promise((r) => setTimeout(r, 50));
+  const reportPath = join(runDir, "report.html");
+  writeFileSync(reportPath, renderHtml(buildReportModel(readTrace(tracer.path))));
   const outDir = resolve(opts.outDir);
   exportRun(
     state,
@@ -139,7 +146,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     outDir,
     { runId, title, candidate: best.candidate, status: best.status, reason: best.reason, wallMs, costUsd: state.budget.spent(), agents: state.agents.size, mode },
     best.dist,
-    { trace: tracer.path },
+    { trace: tracer.path, report: reportPath },
   );
   if (opts.commit) commitOutput(outDir, `factory output: ${title} (run ${runId}, ${best.status.green ? "green" : "incomplete"})`);
   await sandbox.dispose();

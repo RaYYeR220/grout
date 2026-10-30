@@ -71,7 +71,7 @@ export class Conductor extends Actor {
 
   start(): void {
     const { fc } = this;
-    fc.bus.emit(EV.runStarted, "conductor", { runId: fc.state.runId, candidates: [...this.crews.keys()], mode: this.opts.mode });
+    fc.bus.emit(EV.runStarted, "conductor", { runId: fc.state.runId, title: this.opts.title, candidates: [...this.crews.keys()], mode: this.opts.mode });
     this.spawnAnalyst();
     for (const c of this.crews.keys()) this.spawnArchitect(c, architectMessage(fc.state.spec));
     this.watchdog = setInterval(() => this.tick(), 5000);
@@ -89,7 +89,11 @@ export class Conductor extends Actor {
         submitTool("submit_ledger", "Hand in the requirement ledger.", LedgerSchema, (ledger) => {
           if (fc.state.ledger) return undefined;
           fc.state.ledger = ledger;
-          fc.bus.emit(EV.ledgerReady, "analyst", { requirements: ledger.requirements.length, ambiguities: ledger.ambiguities.length });
+          fc.bus.emit(EV.ledgerReady, "analyst", {
+            requirements: ledger.requirements.length,
+            ambiguities: ledger.ambiguities.length,
+            items: ledger.requirements.map((r) => ({ id: r.id, kind: r.kind, statement: r.statement })),
+          });
           for (const a of fc.state.liveAgents({ role: "architect" })) {
             fc.state.deliver(a.agentId, "analyst", `The requirement ledger is ready. Use these ids in your tasks:\n${renderLedger(ledger)}`);
           }
@@ -161,7 +165,7 @@ export class Conductor extends Actor {
     cand.lockfile = install?.lockfile;
     cand.board = new Board(bp.tasks);
     fc.bus.emit(EV.blueprintReady, "conductor", { candidate, tasks: bp.tasks.length });
-    fc.bus.emit(EV.boardOpened, "conductor", { candidate, tasks: bp.tasks.map((t) => t.id) });
+    fc.bus.emit(EV.boardOpened, "conductor", { candidate, tasks: bp.tasks.map((t) => t.id), titles: Object.fromEntries(bp.tasks.map((t) => [t.id, t.title])) });
     return undefined;
   }
 

@@ -36,6 +36,8 @@ export function formatEvent(type: string, who: string, p: P): string | undefined
       return `↺ ${p.taskId} reopened: ${short(p.reason, 70)}`;
     case EV.workspaceCommitted:
       return `  ${p.author} wrote ${p.path} v${p.version}`;
+    case EV.workspaceStale:
+      return `⚡ STALE write refused: ${p.by} wrote ${p.path} from v${p.seen ?? "never read"}, but ${p.currentAuthor} had made it v${p.current}; re-applying`;
     case EV.gateRejected:
       return `! gate refused ${who} ${p.tool}: [${p.rule}] ${short(p.message, 70)}`;
     case EV.testsRan:

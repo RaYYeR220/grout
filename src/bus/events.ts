@@ -15,6 +15,7 @@ export const EV = {
   taskApproved: "task.approved",
   taskReopened: "task.reopened",
   workspaceCommitted: "workspace.committed",
+  workspaceStale: "workspace.stale",
   gateRejected: "gate.rejected",
   testsSubmitted: "tests.submitted",
   testsRan: "tests.ran",
@@ -40,12 +41,12 @@ export type EventType = (typeof EV)[keyof typeof EV];
 type Cand = { candidate: string };
 
 export type EventPayloads = {
-  "run.started": { runId: string; candidates: string[]; mode: string };
-  "ledger.ready": { requirements: number; ambiguities: number };
+  "run.started": { runId: string; title: string; candidates: string[]; mode: string };
+  "ledger.ready": { requirements: number; ambiguities: number; items: { id: string; kind: string; statement: string }[] };
   "blueprint.ready": Cand & { tasks: number };
   "plan.reconciled": Cand & { ok: boolean; uncoveredRequirements: string[]; unknownRequirementRefs: string[]; overlappingSurfaces: string[] };
   "deps.installed": Cand & { ok: boolean; ms: number };
-  "board.opened": Cand & { tasks: string[] };
+  "board.opened": Cand & { tasks: string[]; titles: Record<string, string> };
   "agent.spawned": AgentInfo;
   "agent.ended": Cand & { agentId: string; role: Role; slot: string; taskId?: string; answer: string };
   "task.leased": Cand & { taskId: string; worker: string; generation: number };
@@ -53,6 +54,7 @@ export type EventPayloads = {
   "task.approved": Cand & { taskId: string };
   "task.reopened": Cand & { taskId: string; reason: string };
   "workspace.committed": Cand & { path: string; version: number; rev: number; author: string; taskId?: string };
+  "workspace.stale": Cand & { path: string; current: number; seen: number | null; by: string; currentAuthor: string };
   "gate.rejected": Cand & { agentId: string; tool: string; rule: string; message: string };
   "tests.submitted": Cand & { slot: string; summary: string };
   "tests.ran": Cand & { rev: number; pass: number; fail: number; total: number; tscErrors: number; uncovered: string[]; ms: number };

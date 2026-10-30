@@ -9,7 +9,8 @@ const HELP = `grout — a software factory: concurrent agents turn a one-page sp
 
 Usage:
   grout run <spec.md> [options]      build the spec
-  grout replay <runDir> [--speed N]  replay a recorded run (no API key needed)
+  grout replay <runDir> [--speed N]  replay a recorded run in the terminal (no API key needed)
+  grout report <runDir>              (re)build the HTML report of a run from its trace
   grout nudge <runDir> "<message>"   send a message to a running factory (logged as a human step)
   grout doctor                       check Node, Docker and provider configuration
 
@@ -74,6 +75,19 @@ async function main(argv: string[]): Promise<number> {
     if (!runDir || !message) throw new Error('usage: grout nudge <runDir> "<message>"');
     appendFileSync(join(runDir, "nudges.jsonl"), `${JSON.stringify({ at: Date.now(), text: message })}\n`);
     process.stdout.write("nudge queued; it is delivered to the running agents and logged in HUMAN_STEPS.md\n");
+    return 0;
+  }
+
+  if (command === "report") {
+    const runDir = rest[0];
+    if (!runDir) throw new Error("usage: grout report <runDir>");
+    const { writeFileSync } = await import("node:fs");
+    const { readTrace } = await import("./report/replay.js");
+    const { buildReportModel } = await import("./report/model.js");
+    const { renderHtml } = await import("./report/html.js");
+    const out = join(runDir, "report.html");
+    writeFileSync(out, renderHtml(buildReportModel(readTrace(join(runDir, "trace.jsonl")))));
+    process.stdout.write(`${out}\n`);
     return 0;
   }
 

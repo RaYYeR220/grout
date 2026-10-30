@@ -49,7 +49,8 @@ export function fileTools(t: ToolCtx): Tool[] {
   const committed = (path: string, version: number, rev: number) =>
     t.fc.bus.emit(EV.workspaceCommitted, t.self.id, { candidate: t.candidate, path, version, rev, author: labelOf(t.fc.state, t.self.id), taskId: t.taskId });
   // A STALE answer hands the agent the current content, so it counts as a read of that version.
-  const stale = (path: string, current: number, author: string, content: string) => {
+  const stale = (path: string, current: number, author: string, content: string, seen: number | null) => {
+    t.fc.bus.emit(EV.workspaceStale, t.self.id, { candidate: t.candidate, path, current, seen, by: labelOf(t.fc.state, t.self.id), currentAuthor: labelOf(t.fc.state, author) });
     ws().read(t.self.id, path);
     return `STALE: ${path} changed after you read it (now v${current}, written by ${labelOf(t.fc.state, author)}). Your write was NOT applied. Re-apply your change on top of the current content below, then write again.\n----- current content of ${path} -----\n${content}\n----- end -----`;
   };
@@ -70,7 +71,7 @@ export function fileTools(t: ToolCtx): Tool[] {
       z.object({ path: z.string(), content: z.string() }),
       ({ path, content }) => {
         const r = ws().commit(t.self.id, path, content, t.taskId);
-        if (!r.ok) return stale(r.path, r.current, r.currentAuthor, r.currentContent);
+        if (!r.ok) return stale(r.path, r.current, r.currentAuthor, r.currentContent, r.seen);
         committed(r.path, r.version, r.rev);
         return `OK: wrote ${r.path} (now v${r.version}).`;
       },
@@ -85,7 +86,7 @@ export function fileTools(t: ToolCtx): Tool[] {
           committed(r.path, r.version, r.rev);
           return `OK: edited ${r.path} (now v${r.version}).`;
         }
-        if (r.reason === "stale") return stale(r.path, r.current, r.currentAuthor, r.currentContent);
+        if (r.reason === "stale") return stale(r.path, r.current, r.currentAuthor, r.currentContent, r.seen);
         if (r.reason === "no-match") return `ERROR: old_text was not found in ${r.path}. Read the file again and copy the exact text.`;
         return `ERROR: old_text occurs more than once in ${r.path}; include more surrounding lines so it is unique.`;
       },
