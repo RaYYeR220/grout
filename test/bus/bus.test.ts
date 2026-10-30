@@ -12,7 +12,10 @@ function setup() {
   return { rt, bus };
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 10));
+// Emits are deferred with setImmediate; a few turns of the check phase let every chained emit land.
+const tick = async () => {
+  for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r));
+};
 
 describe("Bus", () => {
   test("a throwing handler does not stop delivery to other participants, and is reported", async () => {
