@@ -40,7 +40,7 @@ export type RunOptions = {
   env?: Record<string, string | undefined>;
   /** Tests and the race harness inject a scripted runner and a sandbox. */
   runnerOverride?: InferenceRunner;
-  sandboxOverride?: Sandbox;
+  makeSandbox?: () => Sandbox;
   verifierDebounceMs?: number;
   /** Extra participants (the live log) join the runtime before the run starts. */
   observe?: (fc: FactoryCtx) => void;
@@ -88,8 +88,13 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   }
 
   let reportFix: (pattern: string, action: string, attempt: number) => void = () => {};
-  const sandbox = withEnvDoctor(opts.sandboxOverride ?? (await createSandbox(opts.sandbox ?? "auto")), (p, a, n) => reportFix(p, a, n));
-  await sandbox.init(runId);
+  const sandboxes = new Map<string, Sandbox>();
+  for (const id of candidateIds) {
+    const raw = opts.makeSandbox ? opts.makeSandbox() : await createSandbox(opts.sandbox ?? "auto");
+    const sb = withEnvDoctor(raw, (p, a, n) => reportFix(p, a, n));
+    await sb.init(candidateIds.length === 1 ? runId : `${runId}-${id}`);
+    sandboxes.set(id, sb);
+  }
 
   const state = new FactoryState({
     runId,
@@ -101,7 +106,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   });
   if (opts.note) state.humanSteps.push({ at: started, kind: "between-runs-fix", text: opts.note });
 
-  const fc = createFactory({ state, runner, models, maxTokens: MAX_TOKENS, sandbox });
+  const fc = createFactory({ state, runner, models, maxTokens: MAX_TOKENS, sandboxes });
   reportFix = (pattern, action, attempt) => fc.bus.emit(EV.envRemediated, "env-doctor", { pattern, action, attempt });
   const tracer = new Tracer(fc, join(runDir, "trace.jsonl"));
   fc.rt.join(tracer);
@@ -130,7 +135,9 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
 
   const finishes = await conductor.done;
   supervisor.dispose();
-  const best = [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];
+  const best =
+    finishes.find((f) => f.candidate === conductor.selection?.winner) ??
+    [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];
   const cand = state.candidate(best.candidate);
   const wallMs = Date.now() - started;
   // Let the last trace lines land before copying the trace.
@@ -149,6 +156,6 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     { trace: tracer.path, report: reportPath },
   );
   if (opts.commit) commitOutput(outDir, `factory output: ${title} (run ${runId}, ${best.status.green ? "green" : "incomplete"})`);
-  await sandbox.dispose();
+  for (const sb of sandboxes.values()) await sb.dispose();
   return { runId, status: best.status, reason: best.reason, outDir, runDir, costUsd: state.budget.spent(), wallMs, candidate: best.candidate, state };
 }

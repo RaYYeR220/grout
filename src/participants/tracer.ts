@@ -83,15 +83,15 @@ export class Tracer extends Actor {
     appendFileSync(this.path, `${JSON.stringify(line)}\n`);
     const p = event.payload as Record<string, any>;
     if (event.type === "inference.started" && p?.loopId) this.started.set(p.loopId, line.t);
-    if (event.type === "inference.completed" && info) this.price(event, info.model, info.role, info.taskId, line.t);
+    if (event.type === "inference.completed" && info) this.price(event, info.model, info.role, info.taskId, info.candidate, line.t);
   }
 
-  private price(event: SemanticEvent, model: string, role: Role, taskId: string | undefined, t: number): void {
+  private price(event: SemanticEvent, model: string, role: Role, taskId: string | undefined, candidate: string, t: number): void {
     const p = event.payload as Record<string, any>;
     const cost = callCost(model, p.tokenUsage, p.rowResponse);
     const start = this.started.get(p.loopId);
     this.started.delete(p.loopId);
-    this.fc.state.budget.add(cost.usd, { role, taskId, model, agentId: event.producerId });
+    this.fc.state.budget.add(cost.usd, { role, taskId, model, agentId: event.producerId, candidate });
     this.fc.bus.emit(EV.llmCall, event.producerId, {
       agentId: event.producerId,
       model,

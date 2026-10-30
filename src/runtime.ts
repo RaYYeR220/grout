@@ -12,7 +12,9 @@ export type FactoryCtx = {
   rt: Runtime;
   state: FactoryState;
   bus: Bus;
-  sandbox?: Sandbox;
+  /** Each candidate has its own sandbox (its own installed dependencies). */
+  sandboxes: Map<string, Sandbox>;
+  sandboxFor(candidate: string): Sandbox | undefined;
   models: Record<Tier, string>;
   maxTokens: Record<Tier, number>;
   /** agentId → resolver for that agent's final answer (see spawnAgent). */
@@ -25,6 +27,7 @@ export function createFactory(opts: {
   models: Record<Tier, string>;
   maxTokens?: Record<Tier, number>;
   sandbox?: Sandbox;
+  sandboxes?: Map<string, Sandbox>;
 }): FactoryCtx {
   const rt = defineRuntime<FactoryState>();
   rt.initializeRuntime({ state: opts.state, inferenceRunnerConfig: { runner: opts.runner } });
@@ -33,7 +36,8 @@ export function createFactory(opts: {
     rt,
     state: opts.state,
     bus,
-    sandbox: opts.sandbox,
+    sandboxes: opts.sandboxes ?? new Map(),
+    sandboxFor: (candidate: string) => fc.sandboxes.get(candidate) ?? opts.sandbox,
     models: opts.models,
     maxTokens: opts.maxTokens ?? { planner: 16000, builder: 16000, utility: 4000 },
     waiters: new Map(),

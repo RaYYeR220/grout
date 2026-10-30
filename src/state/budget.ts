@@ -1,4 +1,4 @@
-export type SpendTags = { role: string; taskId?: string; model: string; agentId: string };
+export type SpendTags = { role: string; taskId?: string; model: string; agentId: string; candidate?: string };
 
 export class Budget {
   private total = 0;
@@ -32,6 +32,10 @@ export class Budget {
 
   byRole(): Record<string, number> {
     return this.sumBy((t) => t.role);
+  }
+
+  byCandidate(): Record<string, number> {
+    return this.sumBy((t) => t.candidate);
   }
 
   byModel(): Record<string, number> {

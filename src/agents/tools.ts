@@ -100,7 +100,7 @@ export function runCheckTool(t: ToolCtx): Tool {
     "Run the type checker or the test suite on the current state of the project (everyone's latest files). kind=typecheck|test; pattern optionally limits tests to matching files.",
     z.object({ kind: z.enum(["typecheck", "test"]), pattern: z.string().regex(/^[\w./-]+$/).optional() }),
     async ({ kind, pattern }) => {
-      const sandbox = t.fc.sandbox;
+      const sandbox = t.fc.sandboxFor(t.candidate);
       if (!sandbox) return "ERROR: no sandbox is configured for this run.";
       const files = t.fc.state.candidate(t.candidate).workspace.snapshot();
       const cmd = kind === "typecheck" ? TYPECHECK_CMD : `${TEST_CMD}${pattern ? ` ${pattern}` : ""}`;

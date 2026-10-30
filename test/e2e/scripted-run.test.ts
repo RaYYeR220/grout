@@ -92,7 +92,7 @@ describe.skipIf(!slow)("scripted end-to-end run (GROUT_SLOW_TESTS=1)", () => {
       outDir: join(dir, "out"),
       runsDir: join(dir, "runs"),
       runnerOverride: new ScriptedRunner(script),
-      sandboxOverride: new LocalSandbox(),
+      makeSandbox: () => new LocalSandbox(),
       verifierDebounceMs: 300,
     });
     expect(result.reason).toMatch(/clean-room check passed/);
@@ -102,4 +102,24 @@ describe.skipIf(!slow)("scripted end-to-end run (GROUT_SLOW_TESTS=1)", () => {
     const types = new Set(readFileSync(join(dir, "out", "grout-run", "trace.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l).type));
     for (const t of ["run.started", "ledger.ready", "board.opened", "task.done", "task.approved", "tests.ran", "llm.call", "release.checked"]) expect(types.has(t), t).toBe(true);
   }, 300_000);
+  test("two candidates cross-check each other and one is selected on the combined suite", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "grout-e2e2-"));
+    const specPath = join(dir, "hello.md");
+    writeFileSync(specPath, SPEC);
+    const result = await runFactory({
+      specPath,
+      outDir: join(dir, "out"),
+      runsDir: join(dir, "runs"),
+      candidates: 2,
+      runnerOverride: new ScriptedRunner(script),
+      makeSandbox: () => new LocalSandbox(),
+      verifierDebounceMs: 300,
+    });
+    expect(result.status.green).toBe(true);
+    const lines = readFileSync(join(dir, "out", "grout-run", "trace.jsonl"), "utf8").trim().split(/\r?\n/).map((l) => JSON.parse(l));
+    const compared = lines.find((l) => l.type === "candidates.compared");
+    expect(compared.payload).toMatchObject({ disagreements: 0, scores: { A: 4, B: 4 } });
+    expect(new Set(lines.filter((l) => l.type === "agent.spawned").map((l) => l.payload.candidate))).toEqual(new Set(["A", "B"]));
+  }, 300_000);
 });
+

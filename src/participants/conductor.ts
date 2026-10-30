@@ -16,6 +16,9 @@ import { LedgerSchema, type Ledger } from "../state/ledger.js";
 import { scaffold } from "../template/scaffold.js";
 import type { Broker } from "./broker.js";
 import { releaseCheck } from "./release.js";
+import { arbitrateDisagreement, foreignFailures, runUnion, selectCandidate, type CandidateScore } from "../candidates.js";
+import { triage } from "../triage.js";
+import type { VitestResult } from "../sandbox/parse.js";
 import type { Verifier } from "./verifier.js";
 
 export const CLEAN_ROOM = [
@@ -47,6 +50,8 @@ export class Conductor extends Actor {
   private watchdog?: NodeJS.Timeout;
   private lastActivity = Date.now();
   private nudgesSeen = 0;
+  private crossRounds = 0;
+  selection?: { winner: string; reason: string; scores: CandidateScore[] };
 
   constructor(
     private readonly fc: FactoryCtx,
@@ -153,7 +158,8 @@ export class Conductor extends Actor {
     }
     const files = scaffold(ledger, bp, this.opts.title);
     const started = Date.now();
-    const install = fc.sandbox ? await fc.sandbox.installDeps(files.get("package.json")!) : undefined;
+    const sandbox = fc.sandboxFor(candidate);
+    const install = sandbox ? await sandbox.installDeps(files.get("package.json")!) : undefined;
     fc.bus.emit(EV.depsInstalled, "conductor", { candidate, ok: !install || install.exitCode === 0, ms: Date.now() - started });
     if (install && install.exitCode !== 0) return `installing the dependencies failed:\n${(install.stderr || install.stdout).slice(-1500)}\nUse dependencies and exact versions that exist, or none`;
     if (install?.lockfile) files.set("package-lock.json", install.lockfile);
@@ -215,8 +221,9 @@ export class Conductor extends Actor {
   private async cleanRoom(candidate: string): Promise<void> {
     const { fc } = this;
     const cand = fc.state.candidate(candidate);
-    if (!fc.sandbox) return void this.finish(candidate, "released without a sandbox", { ok: true, step: "skipped (no sandbox)" });
-    const results = await fc.sandbox.cleanRoom(cand.workspace.snapshot(), CLEAN_ROOM, { collect: ["dist/", REPORT_PATH] });
+    const sandbox = fc.sandboxFor(candidate);
+    if (!sandbox) return void this.finish(candidate, "released without a sandbox", { ok: true, step: "skipped (no sandbox)" });
+    const results = await sandbox.cleanRoom(cand.workspace.snapshot(), CLEAN_ROOM, { collect: ["dist/", REPORT_PATH] });
     for (const r of results) fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[clean room] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
     const failed = results.find((r) => r.exitCode !== 0);
     const last = results[results.length - 1];
@@ -275,16 +282,81 @@ export class Conductor extends Actor {
     const status: ReleaseStatus = ledger
       ? releaseCheck(cand, ledger, cleanRoom)
       : { green: false, failingTests: [], uncovered: [], failingRequirements: [], unapproved: [], untestable: [], ...(cleanRoom ? { cleanRoom } : {}) };
-    if (!status.green && Object.keys(dist).length === 0 && fc.sandbox && cand.workspace.peek("package.json")) {
-      const build = await fc.sandbox.exec(cand.workspace.snapshot(), "npm run build", { collect: ["dist/"], timeoutMs: 120_000 }).catch(() => undefined);
+    const sandbox = fc.sandboxFor(candidate);
+    if (!status.green && Object.keys(dist).length === 0 && sandbox && cand.workspace.peek("package.json")) {
+      const build = await sandbox.exec(cand.workspace.snapshot(), "npm run build", { collect: ["dist/"], timeoutMs: 120_000 }).catch(() => undefined);
       if (build) dist = build.outputs;
     }
     cand.releaseStatus = status;
     fc.bus.emit(EV.releaseChecked, "conductor", { candidate, ...status });
     this.results.push({ candidate, status, reason, dist });
-    if (this.results.length === this.crews.size) {
-      clearInterval(this.watchdog);
-      this.resolveFinish(this.results);
+    if (this.results.length === this.crews.size) await this.allFinished();
+  }
+
+  private async allFinished(): Promise<void> {
+    const { fc } = this;
+    const canCross = this.crews.size === 2 && this.crossRounds < 1 && !fc.state.budget.exceeded() && !fc.state.budget.pastDeadline();
+    if (canCross) {
+      this.crossRounds += 1;
+      if (await this.differential()) return; // the winner was reopened and will finish again
+    } else if (this.crews.size === 2 && !this.selection) {
+      await this.score();
     }
+    clearInterval(this.watchdog);
+    this.resolveFinish(this.results);
+  }
+
+  private async score(): Promise<Map<string, VitestResult[]>> {
+    const { fc } = this;
+    const unions = new Map<string, VitestResult[]>();
+    for (const id of this.crews.keys()) unions.set(id, await runUnion(fc, id));
+    const spend = fc.state.budget.byCandidate();
+    const scores = [...unions].map(([id, rs]) => ({
+      id,
+      pass: rs.filter((r) => r.status === "pass").length,
+      total: rs.length,
+      green: this.results.find((r) => r.candidate === id)?.status.green ?? false,
+      costUsd: spend[id] ?? 0,
+    }));
+    this.selection = { ...selectCandidate(scores), scores };
+    return unions;
+  }
+
+  /**
+   * Differential testing between the two independent teams: each team's acceptance tests run against
+   * the other's program. Where the winner fails the other team's test, an arbiter decides from the spec;
+   * when the code is wrong, the winner adopts that test file and its owning tasks are reopened.
+   */
+  private async differential(): Promise<boolean> {
+    const { fc } = this;
+    const unions = await this.score();
+    const { winner, reason, scores } = this.selection!;
+    const failures = foreignFailures(unions.get(winner) ?? [], winner).slice(0, 4);
+    const other = [...this.crews.keys()].find((c) => c !== winner)!;
+    const otherWs = fc.state.candidate(other).workspace;
+    const sourceOf = (file: string) => otherWs.peek(`test/acceptance/${file.split("__").slice(1).join("__")}`)?.content ?? "";
+    const verdicts = await Promise.all(failures.map((f) => arbitrateDisagreement(fc, winner, f, sourceOf(f.file))));
+    fc.bus.emit(EV.candidatesCompared, "conductor", { winner, scores: Object.fromEntries(scores.map((s) => [s.id, s.pass])), reason, disagreements: failures.length });
+    const codeWrong = failures.filter((_, i) => verdicts[i]?.ruling === "code-wrong");
+    if (codeWrong.length === 0 || !fc.state.ledger) return false;
+    const cand = fc.state.candidate(winner);
+    const disputedFiles = new Set(failures.filter((_, i) => verdicts[i]?.ruling !== "code-wrong").map((f) => f.file));
+    for (const file of new Set(codeWrong.map((f) => f.file))) {
+      if (disputedFiles.has(file)) continue;
+      const path = `test/acceptance/cross-${file.split("__").slice(1).join("__")}`;
+      cand.workspace.read("conductor", path);
+      cand.workspace.commit("conductor", path, sourceOf(file));
+    }
+    const routed = triage({ tsc: [], tests: codeWrong }, cand, fc.state.ledger, () => undefined);
+    if (!routed.some((r) => r.to.kind === "task")) return false;
+    this.finished.delete(winner);
+    this.results.splice(this.results.findIndex((r) => r.candidate === winner), 1);
+    const note = "(This failure comes from the other team's independent test; the arbiter ruled the code wrong. The test is now part of your suite.)";
+    for (const r of routed) {
+      if (r.to.kind !== "task") continue;
+      cand.board!.reopen(r.to.taskId, `${r.message}\n${note}`);
+      fc.bus.emit(EV.taskReopened, "conductor", { candidate: winner, taskId: r.to.taskId, reason: "the other team's test exposed a bug (arbiter: code wrong)" });
+    }
+    return true;
   }
 }

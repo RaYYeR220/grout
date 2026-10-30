@@ -59,14 +59,15 @@ export class Verifier extends Actor {
     const { fc, candidate } = this;
     const cand = fc.state.candidate(candidate);
     const ledger = fc.state.ledger;
-    if (!fc.sandbox || !ledger || !cand.workspace.peek("package.json")) return;
+    const sandbox = fc.sandboxFor(candidate);
+    if (!sandbox || !ledger || !cand.workspace.peek("package.json")) return;
     this.running = true;
     try {
       const rev = cand.workspace.rev;
       const files = cand.workspace.snapshot();
       const started = Date.now();
-      const tsc = await fc.sandbox.exec(files, TYPECHECK_CMD, { timeoutMs: 120_000 });
-      const test = await fc.sandbox.exec(files, TEST_CMD, { collect: [REPORT_PATH], timeoutMs: 240_000 });
+      const tsc = await sandbox.exec(files, TYPECHECK_CMD, { timeoutMs: 120_000 });
+      const test = await sandbox.exec(files, TEST_CMD, { collect: [REPORT_PATH], timeoutMs: 240_000 });
       for (const r of [tsc, test]) fc.bus.emit(EV.sandboxCommand, this.getId(), { cmd: r.cmd, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
       const tscErrors = parseTsc(tsc.stdout + tsc.stderr);
       const report = test.outputs[REPORT_PATH];
