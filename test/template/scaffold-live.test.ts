@@ -75,6 +75,15 @@ describe.skipIf(!slow)("generated project runs its black-box tests (GROUT_SLOW_T
     const results = parseVitestJson(r.outputs[".grout/vitest.json"] ?? "", "");
     expect(results.map((x) => [x.title, x.status])).toEqual([["hello > [R1] greets", "pass"], ["hello > [R2] exits 2 without a name", "pass"]]);
 
+    const viaShim: Ledger = { ...cli, interface: { kind: "cli", entry: "src/cli.ts", invocation: "node index.js <name>", notes: [] } };
+    const { canonicalInterface } = await import("../../src/template/scaffold.js");
+    const canon = canonicalInterface(viaShim.interface);
+    if (!canon.ok) throw new Error(canon.problem);
+    viaShim.interface = canon.iface;
+    const shimFiles = scaffold(viaShim, base, "hello").set("src/index.ts", CLI).set("test/acceptance/hello.test.ts", CLI_TEST);
+    const viaShimRun = await sb.exec(shimFiles, "npx vitest run --reporter=json --outputFile=.grout/vitest.json", { collect: [".grout/vitest.json"] });
+    expect(parseVitestJson(viaShimRun.outputs[".grout/vitest.json"] ?? "", "").map((x) => x.status)).toEqual(["pass", "pass"]);
+
     const http: Ledger = { ...cli, interface: { kind: "http", entry: "src/server.ts", invocation: "node dist/server.js", port: { env: "APP_PORT", default: 8080 }, notes: [] } };
     const httpFiles = scaffold(http, base, "api").set("src/server.ts", SERVER).set("test/acceptance/api.test.ts", HTTP_TEST);
     const h = await sb.exec(httpFiles, "npx vitest run --reporter=json --outputFile=.grout/vitest.json", { collect: [".grout/vitest.json"] });

@@ -69,7 +69,7 @@ describe("reconcile", () => {
         { id: "T2", title: "b", writeSurface: ["src/b.ts", "src/routes.ts"], requirements: [], dependsOn: [], notes: "" },
       ],
     };
-    expect(reconcile(cliLedger, bp)).toEqual({ ok: false, uncoveredRequirements: ["R2"], unknownRequirementRefs: ["R99"], overlappingSurfaces: ["src/routes.ts"] });
+    expect(reconcile(cliLedger, bp)).toEqual({ ok: false, uncoveredRequirements: ["R2"], unknownRequirementRefs: ["R99"], overlappingSurfaces: ["src/routes.ts"], missingEntry: "src/cli.ts" });
   });
 
   test("non-functional requirements do not need a task", () => {

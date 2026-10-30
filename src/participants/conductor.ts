@@ -13,7 +13,7 @@ import { BlueprintSchema } from "../state/blueprint.js";
 import { Board } from "../state/board.js";
 import type { ReleaseStatus } from "../state/factory-state.js";
 import { LedgerSchema, type Ledger } from "../state/ledger.js";
-import { scaffold } from "../template/scaffold.js";
+import { canonicalInterface, entryChecks, scaffold } from "../template/scaffold.js";
 import type { Broker } from "./broker.js";
 import { releaseCheck } from "./release.js";
 import { arbitrateDisagreement, foreignFailures, runUnion, selectCandidate, type CandidateScore } from "../candidates.js";
@@ -93,6 +93,9 @@ export class Conductor extends Actor {
       tools: () => [
         submitTool("submit_ledger", "Hand in the requirement ledger.", LedgerSchema, (ledger) => {
           if (fc.state.ledger) return undefined;
+          const canonical = canonicalInterface(ledger.interface);
+          if (!canonical.ok) return `the interface cannot be built: ${canonical.problem}`;
+          ledger.interface = canonical.iface;
           fc.state.ledger = ledger;
           fc.bus.emit(EV.ledgerReady, "analyst", {
             requirements: ledger.requirements.length,
@@ -100,7 +103,11 @@ export class Conductor extends Actor {
             items: ledger.requirements.map((r) => ({ id: r.id, kind: r.kind, statement: r.statement })),
           });
           for (const a of fc.state.liveAgents({ role: "architect" })) {
-            fc.state.deliver(a.agentId, "analyst", `The requirement ledger is ready. Use these ids in your tasks:\n${renderLedger(ledger)}`);
+            fc.state.deliver(
+              a.agentId,
+              "analyst",
+              `The requirement ledger is ready. Use these ids in your tasks. The program's entry file is ${ledger.interface.entry}: one task must own it.\n${renderLedger(ledger)}`,
+            );
           }
           this.resolveLedger(ledger);
           return undefined;
@@ -153,6 +160,7 @@ export class Conductor extends Actor {
       const parts = [
         rec.uncoveredRequirements.length ? `these requirements belong to no task: ${rec.uncoveredRequirements.join(", ")}` : "",
         rec.unknownRequirementRefs.length ? `these ids are not in the ledger: ${rec.unknownRequirementRefs.join(", ")}` : "",
+        rec.missingEntry ? `no task owns the program's entry file ${rec.missingEntry} (it is how the spec runs the program)` : "",
       ].filter(Boolean);
       return `the plan does not match the ledger (${parts.join("; ")})`;
     }
@@ -223,7 +231,8 @@ export class Conductor extends Actor {
     const cand = fc.state.candidate(candidate);
     const sandbox = fc.sandboxFor(candidate);
     if (!sandbox) return void this.finish(candidate, "released without a sandbox", { ok: true, step: "skipped (no sandbox)" });
-    const results = await sandbox.cleanRoom(cand.workspace.snapshot(), CLEAN_ROOM, { collect: ["dist/", REPORT_PATH] });
+    const steps = [...CLEAN_ROOM.slice(0, 2), ...(fc.state.ledger ? entryChecks(fc.state.ledger.interface) : []), ...CLEAN_ROOM.slice(2)];
+    const results = await sandbox.cleanRoom(cand.workspace.snapshot(), steps, { collect: ["dist/", REPORT_PATH] });
     for (const r of results) fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[clean room] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
     const failed = results.find((r) => r.exitCode !== 0);
     const last = results[results.length - 1];

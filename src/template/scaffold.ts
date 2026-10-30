@@ -1,3 +1,5 @@
+import { posix } from "node:path";
+import { normalizePath } from "../paths.js";
 import type { Blueprint } from "../state/blueprint.js";
 import type { Interface, Ledger } from "../state/ledger.js";
 
@@ -20,6 +22,61 @@ export function slugify(title: string): string {
   );
 }
 
+export type Canonical =
+  | { ok: true; iface: Interface; shim?: { path: string; content: string }; scripts: Record<string, string> }
+  | { ok: false; problem: string };
+
+const FOREIGN_RUNTIMES = ["python", "python3", "ruby", "go", "java", "deno", "bun", "cargo", "php", "dotnet", "perl"];
+
+function normalizeEntry(entry: string, kind: Interface["kind"]): string {
+  let p: string;
+  try {
+    p = normalizePath(entry);
+  } catch {
+    return kind === "cli" ? "src/cli.ts" : "src/server.ts";
+  }
+  p = p.replace(/\.[cm]?js$/, ".ts");
+  if (!p.endsWith(".ts")) p = `${p}.ts`;
+  return p.startsWith("src/") ? p : `src/${posix.basename(p)}`;
+}
+
+/**
+ * The one place where how the spec says the program is run becomes files: the entry is always a
+ * TypeScript file under src/ compiled to dist/; a `node <file>` outside dist/ gets a shim that runs
+ * the built entry, and `npm run <name>` gets that script. What cannot be built is refused early.
+ */
+export function canonicalInterface(iface: Interface): Canonical {
+  const [first, second, third] = iface.invocation.trim().split(/\s+/);
+  let entry = normalizeEntry(iface.entry, iface.kind);
+  let shim: { path: string; content: string } | undefined;
+  const scripts: Record<string, string> = {};
+  if (FOREIGN_RUNTIMES.includes(first)) return { ok: false, problem: `the spec runs the program with ${first}; this factory builds Node.js programs in TypeScript` };
+  if (first === "node") {
+    if (!second || !/\.[cm]?js$/.test(second)) return { ok: false, problem: `the invocation "${iface.invocation}" does not name the JavaScript file node runs` };
+    let target: string;
+    try {
+      target = normalizePath(second);
+    } catch (e) {
+      return { ok: false, problem: (e as Error).message };
+    }
+    if (target.startsWith("dist/")) entry = `src/${target.slice("dist/".length).replace(/\.[cm]?js$/, ".ts")}`;
+    else {
+      entry = `src/${posix.basename(target).replace(/\.[cm]?js$/, ".ts")}`;
+      const depth = target.split("/").length - 1;
+      shim = { path: target, content: `import "${depth ? "../".repeat(depth) : "./"}${distOf(entry)}";\n` };
+    }
+  }
+  if (first === "npm" && second === "run" && third && !["build", "test"].includes(third)) scripts[third] = `node ${distOf(entry)}`;
+  return { ok: true, iface: { ...iface, entry }, shim, scripts };
+}
+
+/** Clean-room checks that the files the program is started from exist after the build. */
+export function entryChecks(iface: Interface): string[] {
+  const c = canonicalInterface(iface);
+  if (!c.ok) return [];
+  return [`node --check ${distOf(c.iface.entry)}`, ...(c.shim ? [`node --check ${c.shim.path}`] : [])];
+}
+
 /** How the black-box tests start the program: the spec's own invocation when it states one. */
 export function harnessInvocation(iface: Interface): Invocation {
   const [first, second, third] = iface.invocation.trim().split(/\s+/);
@@ -30,7 +87,9 @@ export function harnessInvocation(iface: Interface): Invocation {
 }
 
 export function scaffold(ledger: Ledger, blueprint: Blueprint, title: string): Map<string, string> {
-  const iface = ledger.interface;
+  const canonical = canonicalInterface(ledger.interface);
+  if (!canonical.ok) throw new Error(canonical.problem);
+  const iface = canonical.iface;
   const name = slugify(title);
   const entry = distOf(iface.entry);
   const pkg = {
@@ -41,7 +100,7 @@ export function scaffold(ledger: Ledger, blueprint: Blueprint, title: string): M
     ...(iface.kind === "cli" ? { bin: { [iface.binName ?? name]: entry } } : {}),
     main: entry,
     engines: { node: ">=20" },
-    scripts: { build: "tsc -p tsconfig.json", start: `node ${entry}`, test: "vitest run" },
+    scripts: { build: "tsc -p tsconfig.json", start: `node ${entry}`, test: "vitest run", ...canonical.scripts },
     dependencies: blueprint.dependencies,
     devDependencies: { ...TOOLING, ...blueprint.devDependencies },
   };
@@ -60,7 +119,7 @@ export function scaffold(ledger: Ledger, blueprint: Blueprint, title: string): M
     },
     include: ["src"],
   };
-  return new Map([
+  const files = new Map([
     ["package.json", `${JSON.stringify(pkg, null, 2)}\n`],
     ["tsconfig.json", `${JSON.stringify(tsconfig, null, 2)}\n`],
     ["vitest.config.ts", VITEST_CONFIG],
@@ -68,6 +127,8 @@ export function scaffold(ledger: Ledger, blueprint: Blueprint, title: string): M
     ["test/harness.ts", harness(iface)],
     [".gitignore", "node_modules/\n"],
   ]);
+  if (canonical.shim) files.set(canonical.shim.path, canonical.shim.content);
+  return files;
 }
 
 const VITEST_CONFIG = `import { defineConfig } from "vitest/config";
