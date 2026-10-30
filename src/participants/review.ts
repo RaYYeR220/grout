@@ -83,7 +83,7 @@ export class ReviewDesk extends Actor {
     if (this.arbiters >= 12 || fc.state.finished.has(candidate)) return;
     this.arbiters += 1;
     const cand = fc.state.candidate(candidate);
-    const record = cand.matrix.all().find((r) => r.id === d.testId || r.title === d.testId || d.testId.includes(r.title));
+    const record = cand.matrix.all().find((r) => r.id === d.testId || r.title === d.testId || (r.title !== "" && d.testId.includes(r.title)));
     const testFile = record?.file ?? cand.workspace.list("test/").find((f) => cand.workspace.peek(f)?.content.includes(d.testId));
     const source = testFile ? (cand.workspace.peek(testFile)?.content ?? "") : "";
     const authorId = testFile ? cand.workspace.peek(testFile)?.author : undefined;
@@ -99,6 +99,9 @@ export class ReviewDesk extends Actor {
           fc.bus.emit(EV.verdictIssued, "arbiter", { candidate, testId: d.testId, ruling, reasoning, interpretation });
           const note = `Arbiter ruling on "${d.testId}": ${ruling}. ${reasoning}${interpretation ? ` Interpretation to follow: ${interpretation}` : ""}`;
           if (ruling === "ambiguous") fc.state.ledger?.ambiguities.push({ question: d.testId, chosen: interpretation ?? reasoning });
+          const reqId = d.testId.match(/^requirement (R\d+)$/)?.[1];
+          const req = reqId ? fc.state.ledger?.requirements.find((r) => r.id === reqId) : undefined;
+          if (ruling === "untestable" && req) Object.assign(req, { kind: "non-functional", interpretation: `not testable black-box: ${reasoning}` });
           if ((ruling === "test-wrong" || ruling === "ambiguous") && authorSlot) this.broker.reviseTests(authorSlot, note);
           if ((ruling === "code-wrong" || ruling === "ambiguous") && d.agentId) fc.state.deliver(d.agentId, "arbiter", note);
           return undefined;

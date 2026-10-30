@@ -181,6 +181,18 @@ export function disputeTestTool(t: ToolCtx): Tool {
   );
 }
 
+export function reportUntestableTool(t: ToolCtx): Tool {
+  return defineTool(
+    "report_untestable",
+    "Report a requirement that no black-box test can observe (code style, internal structure). An arbiter decides; if it agrees, the requirement is listed but not tested.",
+    z.object({ requirement: z.string().regex(/^R\d+$/), reason: z.string() }),
+    ({ requirement, reason }) => {
+      t.fc.bus.emit(EV.testDisputed, t.self.id, { candidate: t.candidate, testId: `requirement ${requirement}`, reason, by: labelOf(t.fc.state, t.self.id), agentId: t.self.id });
+      return "OK: the arbiter will decide. Continue with your other requirements.";
+    },
+  );
+}
+
 /** A structured hand-in (ledger, blueprint, review, verdict, tests): validated, then passed to whoever spawned the agent. */
 export function submitTool<S extends z.ZodType>(
   name: string,

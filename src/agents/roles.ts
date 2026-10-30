@@ -18,7 +18,7 @@ export const ReviewSchema = z.object({
 });
 
 export const VerdictSchema = z.object({
-  ruling: z.enum(["test-wrong", "code-wrong", "ambiguous"]),
+  ruling: z.enum(["test-wrong", "code-wrong", "ambiguous", "untestable"]),
   reasoning: z.string(),
   interpretation: z.string().optional(),
 });

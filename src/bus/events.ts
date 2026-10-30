@@ -62,7 +62,7 @@ export type EventPayloads = {
   "tests.ran": Cand & { rev: number; pass: number; fail: number; total: number; tscErrors: number; uncovered: string[]; ms: number; incomplete?: boolean };
   "test.failed": Cand & { testId?: string; requirementIds: string[]; to: string; message: string };
   "test.disputed": Cand & { testId: string; reason: string; by: string; agentId?: string };
-  "verdict.issued": Cand & { testId: string; ruling: "test-wrong" | "code-wrong" | "ambiguous"; reasoning: string; interpretation?: string };
+  "verdict.issued": Cand & { testId: string; ruling: "test-wrong" | "code-wrong" | "ambiguous" | "untestable"; reasoning: string; interpretation?: string };
   "change.requested": Cand & { path: string; change: string; from: string; to: string };
   "inbox.delivered": { agentId: string; count: number };
   "agent.stalled": { agentId: string; reason: string };

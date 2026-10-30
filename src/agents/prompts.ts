@@ -107,6 +107,8 @@ Write vitest files under test/acceptance/ (e.g. test/acceptance/commands.test.ts
 
 ${HARNESS_DOC}
 
+If a requirement cannot be observed from outside the program at all (code style, internal structure), call report_untestable for it instead of writing a meaningless test; an arbiter decides.
+
 When your files are written, run_check test with pattern test/acceptance. Failures because the program is not finished yet are expected; failures that come from your test code (syntax errors, wrong imports, a test that cannot load) are yours to fix. Then call submit_tests.`;
 }
 
@@ -146,6 +148,7 @@ Call submit_verdict once:
 - "test-wrong": the test asserts something the spec does not say, or says differently.
 - "code-wrong": the test matches the spec and the program does not.
 - "ambiguous": the spec allows both readings; give the interpretation everyone must follow from now on (prefer the most literal reading of the spec).
+- "untestable": only for a dispute about a requirement itself ("requirement R#"): nothing a black-box test can observe (output, exit code, files, HTTP responses) shows whether it holds, e.g. code style or internal structure. It is then listed but no longer tested. If it can be observed at all, rule "test-wrong" and say how to test it.
 Quote the spec in your reasoning.`;
 
 export function arbiterMessage(spec: string, dispute: { testId: string; reason: string; by: string }, testSource: string, failure: string): string {

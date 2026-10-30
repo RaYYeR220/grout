@@ -3,7 +3,7 @@ import { EV } from "../bus/events.js";
 import { builderInstruction, builderMessage, testAuthorInstruction, testAuthorMessage } from "../agents/prompts.js";
 import { ROLE_LIMITS, TestsDoneSchema } from "../agents/roles.js";
 import { spawnAgent } from "../agents/spawn.js";
-import { disputeTestTool, fileTools, finishTaskTool, requestChangeTool, runCheckTool, submitTool } from "../agents/tools.js";
+import { disputeTestTool, fileTools, finishTaskTool, reportUntestableTool, requestChangeTool, runCheckTool, submitTool } from "../agents/tools.js";
 import type { FactoryCtx } from "../runtime.js";
 import type { TaskSpec } from "../state/blueprint.js";
 
@@ -132,6 +132,7 @@ export class Broker extends Actor {
         return [
           ...fileTools(t),
           runCheckTool(t),
+          reportUntestableTool(t),
           submitTool("submit_tests", "Hand in your acceptance tests once they load and run.", TestsDoneSchema, ({ summary }) => {
             this.cand.testAuthorsDone.add(slot);
             fc.bus.emit(EV.testsSubmitted, self.id, { candidate: opts.candidate, slot, summary });
