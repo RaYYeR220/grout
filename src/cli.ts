@@ -12,6 +12,7 @@ Usage:
   grout replay <runDir> [--speed N]  replay a recorded run in the terminal (no API key needed)
   grout report <runDir>              (re)build the HTML report of a run from its trace
   grout nudge <runDir> "<message>"   send a message to a running factory (logged as a human step)
+  grout race [--runs N] [--builders K] [--seed S]   zero-token race: lost updates with and without the interlock
   grout doctor                       check Node, Docker and provider configuration
 
 run options:
@@ -88,6 +89,20 @@ async function main(argv: string[]): Promise<number> {
     const out = join(runDir, "report.html");
     writeFileSync(out, renderHtml(buildReportModel(readTrace(join(runDir, "trace.jsonl")))));
     process.stdout.write(`${out}\n`);
+    return 0;
+  }
+
+  if (command === "race") {
+    const { values } = parseArgs({ args: rest, options: { runs: { type: "string" }, builders: { type: "string" }, seed: { type: "string" }, json: { type: "string" } } });
+    const { raceHarness } = await import("./race.js");
+    const opts = { runs: Number(values.runs ?? 500), builders: Number(values.builders ?? 3), seed: Number(values.seed ?? 1) };
+    const rows = [];
+    for (const mode of ["naive", "interlocked", "sequential"] as const) rows.push(await raceHarness({ ...opts, mode }));
+    process.stdout.write(`mode         trials  lost updates  trials with a lost line  stale refusals  mean wall\n`);
+    for (const r of rows) {
+      process.stdout.write(`${r.mode.padEnd(12)} ${String(r.runs).padStart(6)}  ${String(r.lostUpdates).padStart(12)}  ${String(r.trialsWithLoss).padStart(23)}  ${String(r.staleRefusals).padStart(14)}  ${String(r.meanWallMs).padStart(6)} ms\n`);
+    }
+    if (values.json) (await import("node:fs")).writeFileSync(values.json, `${JSON.stringify({ ...opts, rows }, null, 2)}\n`);
     return 0;
   }
 

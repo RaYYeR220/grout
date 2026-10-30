@@ -1,0 +1,37 @@
+{
+  "runs": 500,
+  "builders": 3,
+  "seed": 1,
+  "rows": [
+    {
+      "mode": "naive",
+      "runs": 500,
+      "builders": 3,
+      "trialsWithLoss": 500,
+      "lostUpdates": 944,
+      "missingLines": 901,
+      "staleRefusals": 0,
+      "meanWallMs": 52
+    },
+    {
+      "mode": "interlocked",
+      "runs": 500,
+      "builders": 3,
+      "trialsWithLoss": 0,
+      "lostUpdates": 0,
+      "missingLines": 0,
+      "staleRefusals": 1306,
+      "meanWallMs": 98
+    },
+    {
+      "mode": "sequential",
+      "runs": 500,
+      "builders": 3,
+      "trialsWithLoss": 0,
+      "lostUpdates": 0,
+      "missingLines": 0,
+      "staleRefusals": 0,
+      "meanWallMs": 131
+    }
+  ]
+}
