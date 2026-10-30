@@ -8,7 +8,6 @@ import {
   DEFAULT_TIMEOUT_MS,
   firstToken,
   notAllowed,
-  portFor,
   type CmdResult,
   type ExecOptions,
   type Sandbox,
@@ -25,7 +24,7 @@ function killTree(pid: number): void {
   }
 }
 
-function run(cmd: string, cwd: string, opts: ExecOptions, port: number): Promise<CmdResult> {
+function run(cmd: string, cwd: string, opts: ExecOptions): Promise<CmdResult> {
   if (!(ALLOWED_COMMANDS as readonly string[]).includes(firstToken(cmd))) return Promise.resolve(notAllowed(cmd));
   const bad = unsafeToken(cmd);
   if (bad !== undefined) return Promise.resolve({ ...notAllowed(cmd), stderr: `unsafe token in command: ${bad}` });
@@ -37,7 +36,7 @@ function run(cmd: string, cwd: string, opts: ExecOptions, port: number): Promise
       cwd,
       shell: true,
       detached: process.platform !== "win32",
-      env: { ...process.env, PORT: String(port), CI: "1", FORCE_COLOR: "0", ...opts.env },
+      env: { ...process.env, CI: "1", FORCE_COLOR: "0", ...opts.env },
     });
     let stdout = "";
     let stderr = "";
@@ -74,7 +73,7 @@ export class LocalSandbox implements Sandbox {
   async installDeps(packageJson: string): Promise<CmdResult & { lockfile?: string }> {
     const dir = join(this.root, "deps");
     await writeFile(join(dir, "package.json"), packageJson);
-    const r = await run("npm install --ignore-scripts --no-audit --no-fund --loglevel=error", dir, { timeoutMs: 300_000 }, portFor(0));
+    const r = await run("npm install --ignore-scripts --no-audit --no-fund --loglevel=error", dir, { timeoutMs: 300_000 });
     this.depsReady = r.exitCode === 0;
     const lockfile = await readFile(join(dir, "package-lock.json"), "utf8").catch(() => undefined);
     return { ...r, lockfile };
@@ -85,7 +84,7 @@ export class LocalSandbox implements Sandbox {
     const dir = join(this.root, "runs", String(n));
     await writeTree(dir, files);
     if (this.depsReady) await symlink(join(this.root, "deps", "node_modules"), join(dir, "node_modules"), "junction");
-    const r = await run(cmd, dir, opts, portFor(n));
+    const r = await run(cmd, dir, opts);
     return { ...r, outputs: await collectFiles(dir, opts.collect) };
   }
 
@@ -95,7 +94,7 @@ export class LocalSandbox implements Sandbox {
     await writeTree(dir, files);
     const results: CmdResult[] = [];
     for (const cmd of cmds) {
-      const r = await run(cmd, dir, { timeoutMs: 300_000, ...opts }, portFor(n));
+      const r = await run(cmd, dir, { timeoutMs: 300_000, ...opts });
       results.push(r);
       if (r.exitCode !== 0) break;
     }

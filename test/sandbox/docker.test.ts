@@ -24,11 +24,10 @@ describe.skipIf(!enabled)("DockerSandbox (GROUT_DOCKER_TESTS=1)", () => {
     expect(bad.stdout).toContain("TS2322");
   }, 60_000);
 
-  test("collects files and assigns distinct ports", async () => {
-    const files = new Map([["p.mjs", "import { writeFileSync, mkdirSync } from 'node:fs'; mkdirSync('dist', { recursive: true }); writeFileSync('dist/port.txt', process.env.PORT);"]]);
-    const [a, b] = await Promise.all([sb.exec(files, "node p.mjs", { collect: ["dist/"] }), sb.exec(files, "node p.mjs", { collect: ["dist/"] })]);
-    expect(a.outputs["dist/port.txt"]).toMatch(/^\d+$/);
-    expect(a.outputs["dist/port.txt"]).not.toBe(b.outputs["dist/port.txt"]);
+  test("collects files; programs see no PORT unless a test sets one", async () => {
+    const files = new Map([["p.mjs", "import { writeFileSync, mkdirSync } from 'node:fs'; mkdirSync('dist', { recursive: true }); writeFileSync('dist/port.txt', process.env.PORT ?? 'unset');"]]);
+    const a = await sb.exec(files, "node p.mjs", { collect: ["dist/"] });
+    expect(a.outputs["dist/port.txt"]).toBe("unset");
   }, 60_000);
 
   test("kills a command at its timeout", async () => {

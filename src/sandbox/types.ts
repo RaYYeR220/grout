@@ -42,7 +42,3 @@ export function notAllowed(cmd: string): CmdResult {
     outputs: {},
   };
 }
-
-export function portFor(n: number): number {
-  return 40000 + (n % 20000);
-}

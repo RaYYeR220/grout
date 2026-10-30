@@ -6,7 +6,6 @@ import {
   DEFAULT_TIMEOUT_MS,
   firstToken,
   notAllowed,
-  portFor,
   type CmdResult,
   type ExecOptions,
   type Sandbox,
@@ -73,7 +72,7 @@ export class DockerSandbox implements Sandbox {
 
   async installDeps(packageJson: string): Promise<CmdResult & { lockfile?: string }> {
     await this.put(this.container, "/deps", new Map([["package.json", packageJson]]));
-    const r = await this.sh(this.container, "/deps", "npm install --ignore-scripts --no-audit --no-fund --loglevel=error", { timeoutMs: 300_000 }, portFor(0));
+    const r = await this.sh(this.container, "/deps", "npm install --ignore-scripts --no-audit --no-fund --loglevel=error", { timeoutMs: 300_000 });
     this.depsReady = r.exitCode === 0;
     const lock = await docker(["exec", this.container, "cat", "/deps/package-lock.json"]);
     return { ...r, lockfile: lock.code === 0 ? lock.stdout : undefined };
@@ -86,7 +85,7 @@ export class DockerSandbox implements Sandbox {
     const dir = `/runs/${n}`;
     await this.put(this.container, dir, files);
     if (this.depsReady) await docker(["exec", this.container, "ln", "-s", "/deps/node_modules", `${dir}/node_modules`]);
-    const r = await this.sh(this.container, dir, cmd, opts, portFor(n));
+    const r = await this.sh(this.container, dir, cmd, opts);
     return { ...r, outputs: await this.collect(this.container, dir, opts.collect) };
   }
 
@@ -97,7 +96,7 @@ export class DockerSandbox implements Sandbox {
       await this.put(box, "/work", files);
       const results: CmdResult[] = [];
       for (const cmd of cmds) {
-        const r = this.refuse(cmd) ?? (await this.sh(box, "/work", cmd, { timeoutMs: 300_000, ...opts }, portFor(n)));
+        const r = this.refuse(cmd) ?? (await this.sh(box, "/work", cmd, { timeoutMs: 300_000, ...opts }));
         results.push(r);
         if (r.exitCode !== 0) break;
       }
@@ -131,10 +130,10 @@ export class DockerSandbox implements Sandbox {
     if (r.code !== 0) throw new Error(`copying files into ${container}:${dir} failed: ${r.stderr}`);
   }
 
-  private async sh(container: string, dir: string, cmd: string, opts: ExecOptions, port: number): Promise<CmdResult> {
+  private async sh(container: string, dir: string, cmd: string, opts: ExecOptions): Promise<CmdResult> {
     const started = Date.now();
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const env = Object.entries({ PORT: String(port), CI: "1", FORCE_COLOR: "0", ...opts.env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
+    const env = Object.entries({ CI: "1", FORCE_COLOR: "0", ...opts.env }).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
     const secs = Math.max(1, Math.ceil(timeoutMs / 1000));
     const r = await docker(["exec", "-w", dir, ...env, container, "timeout", "-s", "KILL", String(secs), "sh", "-c", cmd], undefined, timeoutMs + 30_000);
     const durationMs = Date.now() - started;

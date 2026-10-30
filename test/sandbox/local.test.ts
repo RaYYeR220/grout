@@ -6,13 +6,13 @@ describe("LocalSandbox", () => {
   beforeAll(() => sb.init(`test-${Date.now()}`));
   afterAll(() => sb.dispose());
 
-  test("each exec gets a fresh snapshot directory and its own PORT", async () => {
-    const files = new Map([["print.mjs", "console.log(process.env.PORT)"]]);
+  test("each exec gets a fresh snapshot directory and no PORT of ours leaks into the program", async () => {
+    const files = new Map([["print.mjs", "console.log(process.cwd(), process.env.PORT ?? 'unset')"]]);
     const [a, b] = await Promise.all([sb.exec(files, "node print.mjs"), sb.exec(files, "node print.mjs")]);
     expect(a.exitCode).toBe(0);
     expect(b.exitCode).toBe(0);
-    expect(a.stdout.trim()).not.toBe(b.stdout.trim());
-    expect(Number(a.stdout.trim())).toBeGreaterThanOrEqual(40000);
+    expect(a.stdout.split(" ")[0]).not.toBe(b.stdout.split(" ")[0]);
+    expect(b.stdout.trim().split(" ").at(-1)).toBe(process.env.PORT ?? "unset");
   });
 
   test("collects requested output files", async () => {

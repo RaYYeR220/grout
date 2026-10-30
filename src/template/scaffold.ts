@@ -104,6 +104,7 @@ export default function setup(): void {
 function harness(iface: Interface): string {
   const invocation = JSON.stringify(harnessInvocation(iface));
   const portEnv = JSON.stringify(iface.port?.env ?? "PORT");
+  const defaultPort = iface.port?.default ?? 3000;
   return `// Test harness: starts the built program the way the spec says it is run.
 import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
@@ -115,6 +116,7 @@ import { fileURLToPath } from "node:url";
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const INVOCATION = ${invocation};
 const PORT_ENV = ${portEnv};
+const DEFAULT_PORT = ${defaultPort};
 
 export type RunResult = { code: number; stdout: string; stderr: string };
 
@@ -172,11 +174,16 @@ function canConnect(port: number): Promise<boolean> {
 
 export type Server = { baseUrl: string; port: number; output(): string; stop(): Promise<void> };
 
-/** Starts the HTTP server on a free port (via the port env var) and waits until it accepts connections. */
-export async function startServer(opts: { env?: Record<string, string>; cwd?: string } = {}): Promise<Server> {
-  const port = await freePort();
+/**
+ * Starts the HTTP server and waits until it accepts connections. By default it gets a free port through
+ * the port variable; with useDefaultPort the variable is removed, to test the spec's default port.
+ */
+export async function startServer(opts: { env?: Record<string, string>; cwd?: string; useDefaultPort?: boolean } = {}): Promise<Server> {
+  const port = opts.useDefaultPort ? DEFAULT_PORT : await freePort();
+  const env: Record<string, string | undefined> = { ...process.env, ...opts.env, [PORT_ENV]: String(port) };
+  if (opts.useDefaultPort) delete env[PORT_ENV];
   const { cmd, args, shell } = command([]);
-  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env: { ...process.env, ...opts.env, [PORT_ENV]: String(port) }, shell });
+  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env, shell });
   let output = "";
   let exited = false;
   child.stdout.on("data", (d) => (output += d));

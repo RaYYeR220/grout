@@ -55,6 +55,8 @@ describe("scaffold", () => {
     const files = scaffold(http, { ...blueprint, tasks: [{ ...blueprint.tasks[0], writeSurface: ["src/server.ts"] }] }, "api");
     expect(JSON.parse(files.get("package.json")!).bin).toBeUndefined();
     expect(files.get("test/harness.ts")).toContain('const PORT_ENV = "APP_PORT"');
+    expect(files.get("test/harness.ts")).toContain("const DEFAULT_PORT = 8080");
+    expect(files.get("test/harness.ts")).toContain("useDefaultPort");
   });
 });
 

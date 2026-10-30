@@ -90,8 +90,9 @@ export const HARNESS_DOC = `Test harness (import from "../harness.js" inside tes
 - runCli(args: string[], opts?: { stdin?: string; env?: Record<string,string>; cwd?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>
   Runs the built CLI exactly as the spec invokes it. Default cwd is the project root.
 - tempDir(): string — a fresh empty directory. Use it as cwd (or in env) whenever the program reads or writes files, so tests never share state.
-- startServer(opts?: { env?: Record<string,string>; cwd?: string }): Promise<{ baseUrl: string; port: number; output(): string; stop(): Promise<void> }>
-  Starts the HTTP server on a free port and waits until it accepts connections. Use fetch(server.baseUrl + "/path"). Always stop() it (afterAll / afterEach).
+- startServer(opts?: { env?: Record<string,string>; cwd?: string; useDefaultPort?: boolean }): Promise<{ baseUrl: string; port: number; output(): string; stop(): Promise<void> }>
+  Starts the HTTP server on a free port (through the port environment variable) and waits until it accepts connections. Use fetch(server.baseUrl + "/path"). Always stop() it (afterAll / afterEach).
+  To test the spec's default port, pass useDefaultPort: true: the port variable is removed and the server must listen on the default port. Only one such server can run at a time.
 The project is built once before the tests run.`;
 
 export function testAuthorInstruction(): string {

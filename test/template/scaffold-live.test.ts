@@ -45,6 +45,15 @@ test("[R1] echoes the path", async () => {
   const r = await fetch(s.baseUrl + "/x");
   expect(await r.json()).toEqual({ path: "/x" });
 });
+test("[R2] without the port variable it listens on the default port", async () => {
+  const d = await startServer({ useDefaultPort: true });
+  try {
+    expect(d.port).toBe(8080);
+    expect((await fetch(d.baseUrl + "/y")).status).toBe(200);
+  } finally {
+    await d.stop();
+  }
+});
 `;
 
 describe.skipIf(!slow)("generated project runs its black-box tests (GROUT_SLOW_TESTS=1)", () => {
@@ -69,6 +78,6 @@ describe.skipIf(!slow)("generated project runs its black-box tests (GROUT_SLOW_T
     const http: Ledger = { ...cli, interface: { kind: "http", entry: "src/server.ts", invocation: "node dist/server.js", port: { env: "APP_PORT", default: 8080 }, notes: [] } };
     const httpFiles = scaffold(http, base, "api").set("src/server.ts", SERVER).set("test/acceptance/api.test.ts", HTTP_TEST);
     const h = await sb.exec(httpFiles, "npx vitest run --reporter=json --outputFile=.grout/vitest.json", { collect: [".grout/vitest.json"] });
-    expect(parseVitestJson(h.outputs[".grout/vitest.json"] ?? "", "").map((x) => x.status)).toEqual(["pass"]);
+    expect(parseVitestJson(h.outputs[".grout/vitest.json"] ?? "", "").map((x) => x.status)).toEqual(["pass", "pass"]);
   }, 240_000);
 });
