@@ -161,6 +161,7 @@ export class Conductor extends Actor {
         rec.uncoveredRequirements.length ? `these requirements belong to no task: ${rec.uncoveredRequirements.join(", ")}` : "",
         rec.unknownRequirementRefs.length ? `these ids are not in the ledger: ${rec.unknownRequirementRefs.join(", ")}` : "",
         rec.missingEntry ? `no task owns the program's entry file ${rec.missingEntry} (it is how the spec runs the program)` : "",
+        rec.badDependencies?.length ? `task dependencies are broken: ${rec.badDependencies.join("; ")}` : "",
       ].filter(Boolean);
       return `the plan does not match the ledger (${parts.join("; ")})`;
     }

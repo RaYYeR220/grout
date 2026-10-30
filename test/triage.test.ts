@@ -25,7 +25,7 @@ function candidate() {
   return c;
 }
 
-const authorOf = (file: string) => (file.startsWith("test/acceptance/") ? "test-author-1" : undefined);
+const authorOf = (file: string) => (file.startsWith("test/acceptance/") ? { kind: "test-author" as const, slot: "test-author-1" } : undefined);
 
 describe("triage", () => {
   test("a type error in an owned file goes to its task; in a shared file to every owner", () => {
@@ -79,6 +79,16 @@ describe("triage", () => {
     expect(routed.map((r) => r.to)).toEqual([{ kind: "test-author", slot: "test-author-1" }]);
     expect(routed[0].message).toContain("SyntaxError");
     expect(routed[0].message).toContain("no ids here");
+  });
+
+  test("a failing builder unit test without requirement ids goes back to the task that wrote it", () => {
+    const routed = triage(
+      { tsc: [], tests: [{ file: "test/unit/store.test.ts", title: "stores items", status: "fail", failure: "x", stackFiles: [] }] },
+      candidate(),
+      ledger,
+      (file) => (file === "test/unit/store.test.ts" ? { kind: "task", taskId: "T1" } : undefined),
+    );
+    expect(routed.map((r) => r.to)).toEqual([{ kind: "task", taskId: "T1" }]);
   });
 
   test("passing tests route nothing", () => {

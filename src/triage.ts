@@ -27,7 +27,7 @@ export function triage(
   failures: { tsc: TscError[]; tests: VitestResult[] },
   cand: CandidateState,
   ledger: Ledger,
-  authorOf: (testFile: string) => string | undefined,
+  ownerOfTest: (testFile: string) => Destination | undefined,
 ): Routed[] {
   const routes = new Map<string, Routed & { lines: string[] }>();
   const add = (to: Destination, line: string, reqIds: string[] = [], testId?: string) => {
@@ -42,8 +42,8 @@ export function triage(
   for (const e of failures.tsc) {
     const line = `type error ${e.file}(${e.line},${e.col}) ${e.code}: ${e.message}`;
     if (e.file.startsWith("test/")) {
-      const author = authorOf(e.file);
-      if (author) add({ kind: "test-author", slot: author }, line);
+      const owner = ownerOfTest(e.file);
+      if (owner) add(owner, line);
       continue;
     }
     const owners = tasksOwning(cand, e.file);
@@ -56,15 +56,17 @@ export function triage(
     const excerpt = (t.failure ?? "").split("\n").slice(0, 8).join("\n").slice(0, 700);
     const line = `test "${t.title}" (${t.file}) failed:\n${excerpt}`;
     const reqIds = requirementIdsOf(t.title);
-    const author = authorOf(t.file);
+    const owner = ownerOfTest(t.file);
     if (t.status === "error" && t.title.startsWith("(suite did not run")) {
       // A hook failed: usually the program did not start, sometimes the test's own setup is wrong.
       for (const o of tasksCovering(cand, reqIds)) add({ kind: "task", taskId: o }, line, reqIds, testId);
-      if (author) add({ kind: "test-author", slot: author }, line, reqIds, testId);
+      if (owner) add(owner, line, reqIds, testId);
       continue;
     }
     if (t.status === "error" || reqIds.length === 0) {
-      if (author) add({ kind: "test-author", slot: author }, reqIds.length ? line : `${line}\n(this test has no [R#] requirement id in its title)`, reqIds, testId);
+      // Acceptance tests carry [R#] ids; a builder's own unit test goes back to the task that wrote it.
+      const note = reqIds.length || owner?.kind === "task" ? line : `${line}\n(this test has no [R#] requirement id in its title)`;
+      if (owner) add(owner, note, reqIds, testId);
       continue;
     }
     const fromStack = t.stackFiles.filter((f) => f.startsWith("src/")).flatMap((f) => tasksOwning(cand, f));

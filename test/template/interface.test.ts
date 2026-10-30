@@ -57,3 +57,18 @@ describe("scaffold follows the canonical interface", () => {
     expect(reconcile(ledger, blueprint)).toMatchObject({ ok: true });
   });
 });
+
+describe("reconcile checks task dependencies", () => {
+  const ledger: Ledger = { requirements: [{ id: "R1", kind: "behavior", statement: "x", specQuote: "x", examples: [] }], interface: cli({}), ambiguities: [] };
+  const task = (id: string, dependsOn: string[], surface = [`src/${id}.ts`]) => ({ id, title: id, writeSurface: surface, requirements: id === "T1" ? ["R1"] : [], dependsOn, notes: "" });
+  const bp = (tasks: ReturnType<typeof task>[]): Blueprint => ({ files: [], dependencies: {}, devDependencies: {}, tasks: [{ ...tasks[0], writeSurface: ["src/cli.ts"] }, ...tasks.slice(1)] });
+
+  test("unknown, self and circular dependencies are refused", () => {
+    expect(reconcile(ledger, bp([task("T1", ["T9"])])).badDependencies).toEqual(["T1 depends on unknown task T9"]);
+    expect(reconcile(ledger, bp([task("T1", ["T1"])])).badDependencies).toEqual(["T1 depends on itself"]);
+    expect(reconcile(ledger, bp([task("T1", ["T2"]), task("T2", ["T3"]), task("T3", ["T1"])])).badDependencies).toEqual(["circular dependency: T1 → T2 → T3 → T1"]);
+    expect(reconcile(ledger, bp([task("T1", ["T2"]), task("T2", ["T3"]), task("T3", ["T1"])])).ok).toBe(false);
+    expect(reconcile(ledger, bp([task("T1", []), task("T2", ["T1"])])).ok).toBe(true);
+  });
+});
+

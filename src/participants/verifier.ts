@@ -4,7 +4,7 @@ import { REPORT_PATH, TEST_CMD, TYPECHECK_CMD } from "../agents/tools.js";
 import type { FactoryCtx } from "../runtime.js";
 import { parseTsc, parseVitestJson, type VitestResult } from "../sandbox/parse.js";
 import { requirementIdsOf, type TestRecord } from "../state/test-matrix.js";
-import { triage } from "../triage.js";
+import { triage, type Destination } from "../triage.js";
 import type { Broker } from "./broker.js";
 
 export const MAX_ATTEMPTS = 5;
@@ -58,10 +58,13 @@ export class Verifier extends Actor {
     }, this.debounceMs);
   }
 
-  private authorOf = (file: string): string | undefined => {
+  /** Whoever last wrote a test file fixes it: a test author by slot, a builder through its task. */
+  private ownerOfTest = (file: string): Destination | undefined => {
     const author = this.fc.state.candidate(this.candidate).workspace.peek(file)?.author;
     const info = author ? this.fc.state.agents.get(author) : undefined;
-    return info?.role === "test-author" ? info.slot : undefined;
+    if (info?.role === "test-author") return { kind: "test-author", slot: info.slot };
+    if (info?.role === "builder" && info.taskId) return { kind: "task", taskId: info.taskId };
+    return undefined;
   };
 
   async run(): Promise<void> {
@@ -132,7 +135,7 @@ export class Verifier extends Actor {
     const cand = fc.state.candidate(candidate);
     const board = cand.board;
     if (!board) return;
-    for (const r of triage({ tsc, tests: results }, cand, fc.state.ledger!, this.authorOf)) {
+    for (const r of triage({ tsc, tests: results }, cand, fc.state.ledger!, this.ownerOfTest)) {
       if (r.to.kind === "test-author") {
         if (!cand.testAuthorsDone.has(r.to.slot)) continue; // still writing: it runs its own checks
         fc.bus.emit(EV.testFailed, this.getId(), { candidate, requirementIds: r.requirementIds, to: r.to.slot, message: r.message.slice(0, 500) });

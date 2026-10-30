@@ -48,7 +48,7 @@ describe("a suite whose beforeAll hook throws", () => {
       { id: "T1", title: "server", writeSurface: ["src/server.ts"], requirements: ["R1", "R2"], dependsOn: [], notes: "" },
       { id: "T2", title: "store", writeSurface: ["src/store.ts"], requirements: ["R3", "R4"], dependsOn: [], notes: "" },
     ]);
-    const routed = triage({ tsc: [], tests: results }, c, ledger, () => "test-author-1");
+    const routed = triage({ tsc: [], tests: results }, c, ledger, () => ({ kind: "test-author", slot: "test-author-1" }));
     expect(routed.map((r) => r.to)).toEqual([
       { kind: "task", taskId: "T1" },
       { kind: "task", taskId: "T2" },
