@@ -6,7 +6,7 @@ Two measurements: what the factory produces on specs it has never seen, judged b
 
 `bench/specs/` holds eight one-page specs written like hackathon briefs: four CLIs and four HTTP APIs, with exact output formats, exit codes, validation messages, stdin input, file persistence, pagination and sorting, time-to-live, rate limits with headers, and four different ways of being started (`node dist/x.js`, a `bin` command, `npm start --`, and port variables with defaults). For each one, `bench/acceptance/<spec>/` holds a hidden acceptance suite written independently of the factory; the factory never reads it. After a run the suite is run against the output directory.
 
-Setup (run 2, the final version of the factory): economy preset (planner, reviewer and arbiter on `claude-sonnet-5-5`, builders and test authors on `claude-haiku-5-5`, through Venice), Docker sandbox, one candidate, three builder slots, two test authors, a budget cap of $1.50 per run, no human input, two factories running at a time on one machine. Each spec was run once in this pass; nothing was re-run or picked.
+Setup (run 2: the final version of the factory, except for the longer test-run limits described at the end): economy preset (planner, reviewer and arbiter on `claude-sonnet-5-5`, builders and test authors on `claude-haiku-5-5`, through Venice), Docker sandbox, one candidate, three builder slots, two test authors, a budget cap of $1.50 per run, no human input, two factories running at a time on one machine. Each spec was run once in this pass; nothing was re-run or picked.
 
 | spec | kind | hidden tests | release | human steps | time | cost | agents | peak concurrent | stale writes caught | gate refusals | tasks sent back |
 |---|---|---|---|---|---|---|---|---|---|---|---|

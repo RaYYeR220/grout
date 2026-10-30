@@ -154,7 +154,7 @@ TypeScript, ESM, Node 20+, built by `tsc` into `dist/`, tested with vitest throu
 ## Tests
 
 ```
-npm test                                           # 140+ unit and integration tests, no network, no tokens
+npm test                                           # 180+ unit and integration tests, no network, no tokens
 GROUT_DOCKER_TESTS=1 npm test                      # + the Docker sandbox
 GROUT_SLOW_TESTS=1 npm test                        # + generated projects built and tested for real, and full scripted runs (one and two candidates)
 ```
