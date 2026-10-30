@@ -10,7 +10,7 @@ import { Conductor } from "./participants/conductor.js";
 import { ReviewDesk } from "./participants/review.js";
 import { Tracer } from "./participants/tracer.js";
 import { Verifier } from "./participants/verifier.js";
-import { createFactory } from "./runtime.js";
+import { createFactory, type FactoryCtx } from "./runtime.js";
 import { createSandbox, type SandboxPreference } from "./sandbox/index.js";
 import type { Sandbox } from "./sandbox/types.js";
 import { FactoryState, type ReleaseStatus } from "./state/factory-state.js";
@@ -36,6 +36,8 @@ export type RunOptions = {
   runnerOverride?: InferenceRunner;
   sandboxOverride?: Sandbox;
   verifierDebounceMs?: number;
+  /** Extra participants (the live log) join the runtime before the run starts. */
+  observe?: (fc: FactoryCtx) => void;
 };
 
 export type RunResult = {
@@ -95,6 +97,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   const fc = createFactory({ state, runner, models, maxTokens: MAX_TOKENS, sandbox });
   const tracer = new Tracer(fc, join(runDir, "trace.jsonl"));
   fc.rt.join(tracer);
+  opts.observe?.(fc);
 
   const crews = new Map<string, { broker: Broker; verifier: Verifier }>();
   for (const id of candidateIds) {

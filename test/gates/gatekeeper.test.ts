@@ -96,6 +96,14 @@ describe("gate in a live loop", () => {
     expect(seen[0]).toMatch(/REJECTED \[valid-json\].*truncated/s);
   });
 
+  test("a call with empty arguments is treated as {} (models send '' for no-argument tools)", async () => {
+    const calls: string[] = [];
+    const { rt, state } = makeRuntime((_input, turn) => (turn === 0 ? toolCall("list_files", "") : say("done")));
+    const gate = makeGate({ agentId: "a", role: "architect", candidate: "A", state, maxSteps: 10 });
+    await runRawAgent(rt, { name: "a", tools: [echoTool("list_files", calls)], message: "go", gate });
+    expect(calls).toEqual(["list_files:{}"]);
+  });
+
   test("inbox messages reach a running agent before its next inference", async () => {
     const seenUserTexts: string[][] = [];
     let state!: ReturnType<typeof makeRuntime>["state"];

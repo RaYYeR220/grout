@@ -67,6 +67,11 @@ export function makeGate(ctx: GateContext): InterceptionHandler {
     handle: async (t) => {
       if (t.nextStateId === "inference" || t.nextStateId === "inference_streaming") return beforeInference(t);
       if (t.nextStateId === "function_call") {
+        if (t.input.call.args.trim() === "") {
+          // Models send "" for a tool with no required arguments; the runtime would fail to parse it.
+          const { callId, name } = t.input.call;
+          t = { nextStateId: "function_call", input: { ...t.input, call: FunctionCallItem.rehydrate({ callId, name, args: "{}" }) } };
+        }
         let args: unknown;
         try {
           args = JSON.parse(t.input.call.args);

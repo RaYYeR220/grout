@@ -40,13 +40,18 @@ function slim(event: SemanticEvent): unknown {
       return { loopId: p.loopId, output: clip(p.output?.text, 1200) };
     case "model.answer":
       return { loopId: p.loopId, answer: clip(p.answer?.content?.text, 1500) };
+    case "interception.started":
+    case "interception.finished":
+      return { nextStateId: p.nextStateId };
     case "message_received.completed":
     case "inference.stream":
     case "participant.joined":
     case "participant.left":
       return { loopId: p.loopId };
-    default:
-      return p;
+    default: {
+      const json = JSON.stringify(p);
+      return json.length > 4000 ? { truncated: json.slice(0, 4000) } : p;
+    }
   }
 }
 
