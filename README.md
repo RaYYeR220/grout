@@ -28,20 +28,20 @@ The interlock keeps every update and is still faster than going one at a time. I
 
 ## Results on unseen specs
 
-Eight practice specs (four CLIs, four HTTP APIs, each a page long, with exact output formats, exit codes, validation messages, persistence, pagination, rate limits). Each has a **hidden acceptance suite written independently of the factory**, which the factory never sees, run afterwards against what it produced (`npm run grout -- bench`). All runs used the economy preset (Sonnet 5.5 plans and reviews, Haiku 5.5 builds and writes tests), Docker sandbox, one candidate, no human input; each spec was run once. **139 of 139 hidden tests pass, all eight releases green, $2.66 in total.**
+Eight practice specs (four CLIs, four HTTP APIs, each a page long, with exact output formats, exit codes, validation messages, persistence, pagination, rate limits). Each has a **hidden acceptance suite written independently of the factory**, which the factory never sees, run afterwards against what it produced (`npm run grout -- bench`). All runs used the economy preset (Sonnet 5.5 plans and reviews, Haiku 5.5 builds and writes tests), Docker sandbox, one candidate, no human input. Every spec has been run twice, on the final factory (below) and on an earlier version: **139 of 139 hidden tests passed both times, 16 of 16 releases green, about $2.60 per full pass over the eight specs.**
 
 <!-- bench-table -->
 | spec | kind | hidden tests | release | human steps | time | cost | agents | peak concurrent | stale writes caught | gate refusals | tasks sent back |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| hello | CLI | 8/8 | green | 0 | 67 s | $0.095 | 6 | 4 | 0 | 1 | 0 |
-| hitcount | HTTP | 12/12 | green | 0 | 366 s | $0.369 | 18 | 5 | 0 | 0 | 3 |
-| inventory | HTTP | 24/24 | green | 0 | 584 s | $0.988 | 27 | 6 | 0 | 0 | 6 |
-| kv | HTTP | 18/18 | green | 0 | 219 s | $0.201 | 8 | 5 | 1 | 0 | 0 |
-| semver | CLI | 16/16 | green | 0 | 327 s | $0.221 | 10 | 8 | 1 | 0 | 0 |
-| shortener | HTTP | 18/18 | green | 0 | 473 s | $0.335 | 13 | 5 | 1 | 0 | 2 |
-| todo | CLI | 18/18 | green | 0 | 266 s | $0.224 | 10 | 6 | 1 | 0 | 0 |
-| wordfreq | CLI | 25/25 | green | 0 | 260 s | $0.230 | 15 | 7 | 1 | 0 | 2 |
-| **total** | | **139/139** | 8/8 green | 0 | | **$2.664** | | | 5 | 1 | 13 |
+| hello | CLI | 8/8 | green | 0 | 299 s | $0.105 | 8 | 5 | 0 | 0 | 0 |
+| hitcount | HTTP | 12/12 | green | 0 | 543 s | $0.626 | 24 | 5 | 1 | 0 | 8 |
+| inventory | HTTP | 24/24 | green | 0 | 407 s | $0.522 | 18 | 6 | 1 | 0 | 4 |
+| kv | HTTP | 18/18 | green | 0 | 228 s | $0.190 | 8 | 5 | 1 | 0 | 0 |
+| semver | CLI | 16/16 | green | 0 | 1918 s | $0.555 | 18 | 5 | 1 | 1 | 4 |
+| shortener | HTTP | 18/18 | green | 0 | 164 s | $0.163 | 8 | 5 | 1 | 0 | 0 |
+| todo | CLI | 18/18 | green | 0 | 1259 s | $0.206 | 10 | 6 | 1 | 0 | 0 |
+| wordfreq | CLI | 25/25 | green | 0 | 400 s | $0.235 | 14 | 6 | 2 | 0 | 2 |
+| **total** | | **139/139** | 8/8 green | 0 | | **$2.602** | | | 8 | 1 | 18 |
 <!-- /bench-table -->
 
 The hidden suites are checked against negative controls: for two specs a deliberately wrong implementation (`bench/fixtures/wrong-*`) fails exactly on its planted bugs while the reference passes everything. Full numbers and how to reproduce them: [BENCHMARKS.md](BENCHMARKS.md).
