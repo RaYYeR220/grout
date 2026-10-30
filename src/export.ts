@@ -74,6 +74,7 @@ export function exportRun(
   summary: RunSummary,
   dist: Record<string, string>,
   artifacts: { trace?: string; report?: string },
+  files: Map<string, string> = cand.workspace.snapshot(),
 ): void {
   mkdirSync(outDir, { recursive: true });
   const write = (rel: string, content: string) => {
@@ -81,7 +82,7 @@ export function exportRun(
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(abs, content);
   };
-  for (const [path, content] of cand.workspace.snapshot()) if (!path.startsWith(".grout/")) write(path, content);
+  for (const [path, content] of files) if (!path.startsWith(".grout/")) write(path, content);
   for (const [path, content] of Object.entries(dist)) write(path, content);
   write("RUN.md", runMarkdown(state, cand, summary));
   write("HUMAN_STEPS.md", humanStepsMarkdown(state));

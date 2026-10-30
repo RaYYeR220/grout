@@ -56,6 +56,8 @@ export class FactoryState extends RuntimeState {
   readonly candidates = new Map<string, CandidateState>();
   readonly agents = new Map<string, AgentInfo>();
   readonly stopped = new Map<string, string>();
+  /** Candidates whose result is decided: no agent of theirs may keep working. */
+  readonly finished = new Set<string>();
   readonly humanSteps: HumanStep[] = [];
   ledger?: Ledger;
   lessons: string[] = [];

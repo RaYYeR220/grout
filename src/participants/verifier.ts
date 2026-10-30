@@ -54,6 +54,7 @@ export class Verifier extends Actor {
   }
 
   request(): void {
+    if (this.fc.state.finished.has(this.candidate)) return;
     if (this.running) {
       this.again = true;
       return;

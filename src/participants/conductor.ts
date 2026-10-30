@@ -27,7 +27,8 @@ export const CLEAN_ROOM = [
   TEST_CMD,
 ];
 
-export type Finish = { candidate: string; status: ReleaseStatus; reason: string; dist: Record<string, string> };
+/** `files` is the exact snapshot that was checked: the export writes it, not whatever the workspace holds later. */
+export type Finish = { candidate: string; status: ReleaseStatus; reason: string; dist: Record<string, string>; files: Map<string, string> };
 
 type Crew = { broker: Broker; verifier: Verifier };
 
@@ -39,7 +40,10 @@ type Crew = { broker: Broker; verifier: Verifier };
 export class Conductor extends Actor {
   private resolveLedger!: (l: Ledger) => void;
   private readonly ledgerReady = new Promise<Ledger>((r) => (this.resolveLedger = r));
-  private readonly finished = new Set<string>();
+  private get finished(): Set<string> {
+    return this.fc.state.finished;
+  }
+  private readonly preRound = new Map<string, Finish>();
   private readonly checking = new Set<string>();
   private readonly cleanRoomFailures = new Map<string, number>();
   private readonly uncoveredRevisions = new Map<string, number>();
@@ -234,7 +238,11 @@ export class Conductor extends Actor {
     const sandbox = fc.sandboxFor(candidate);
     if (!sandbox) return void this.finish(candidate, "released without a sandbox", { ok: true, step: "skipped (no sandbox)" });
     const steps = [...CLEAN_ROOM.slice(0, 2), ...(fc.state.ledger ? entryChecks(fc.state.ledger.interface) : []), ...CLEAN_ROOM.slice(2)];
-    const results = await sandbox.cleanRoom(cand.workspace.snapshot(), steps, { collect: ["dist/", REPORT_PATH] });
+    const snapshot = cand.workspace.snapshot();
+    // Near the deadline every step gets only its share of the time that is left.
+    const left = fc.state.budget.deadlineMs !== undefined ? fc.state.budget.deadlineMs - Date.now() : Infinity;
+    const timeoutMs = Math.max(30_000, Math.min(300_000, Math.floor(left / steps.length)));
+    const results = await sandbox.cleanRoom(snapshot, steps, { collect: ["dist/", REPORT_PATH], timeoutMs });
     for (const r of results) fc.bus.emit(EV.sandboxCommand, "conductor", { cmd: `[clean room] ${r.cmd}`, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
     const failed = results.find((r) => r.exitCode !== 0);
     const last = results[results.length - 1];
@@ -242,7 +250,7 @@ export class Conductor extends Actor {
     const testsGreen = tests.length > 0 && tests.every((t) => t.status === "pass" || t.status === "skip");
     if (!failed && testsGreen) {
       const dist = Object.fromEntries(Object.entries(last.outputs).filter(([p]) => p.startsWith("dist/")));
-      return void this.finish(candidate, "all requirements covered by passing tests; clean-room check passed", { ok: true }, dist);
+      return void this.finish(candidate, "all requirements covered by passing tests; clean-room check passed", { ok: true }, dist, snapshot);
     }
     const n = (this.cleanRoomFailures.get(candidate) ?? 0) + 1;
     this.cleanRoomFailures.set(candidate, n);
@@ -283,9 +291,10 @@ export class Conductor extends Actor {
     this.nudgesSeen = lines.length;
   }
 
-  private async finish(candidate: string, reason: string, cleanRoom?: ReleaseStatus["cleanRoom"], dist: Record<string, string> = {}): Promise<void> {
+  private async finish(candidate: string, reason: string, cleanRoom?: ReleaseStatus["cleanRoom"], dist: Record<string, string> = {}, checked?: Map<string, string>): Promise<void> {
     if (this.finished.has(candidate)) return;
     this.finished.add(candidate);
+    const files = checked ?? this.fc.state.candidate(candidate).workspace.snapshot();
     const { fc } = this;
     for (const a of fc.state.liveAgents({ candidate })) fc.state.stopped.set(a.agentId, "the run is over");
     const cand = fc.state.candidate(candidate);
@@ -295,26 +304,56 @@ export class Conductor extends Actor {
       : { green: false, failingTests: [], uncovered: [], failingRequirements: [], unapproved: [], untestable: [], ...(cleanRoom ? { cleanRoom } : {}) };
     const sandbox = fc.sandboxFor(candidate);
     if (!status.green && Object.keys(dist).length === 0 && sandbox && cand.workspace.peek("package.json")) {
-      const build = await sandbox.exec(cand.workspace.snapshot(), "npm run build", { collect: ["dist/"], timeoutMs: 120_000 }).catch(() => undefined);
+      const build = await sandbox.exec(files, "npm run build", { collect: ["dist/"], timeoutMs: 120_000 }).catch(() => undefined);
       if (build) dist = build.outputs;
     }
     cand.releaseStatus = status;
     fc.bus.emit(EV.releaseChecked, "conductor", { candidate, ...status });
-    this.results.push({ candidate, status, reason, dist });
+    this.results.push({ candidate, status, reason, dist, files });
     if (this.results.length === this.crews.size) await this.allFinished();
   }
 
   private async allFinished(): Promise<void> {
     const { fc } = this;
-    const canCross = this.crews.size === 2 && this.crossRounds < 1 && !fc.state.budget.exceeded() && !fc.state.budget.pastDeadline();
-    if (canCross) {
-      this.crossRounds += 1;
-      if (await this.differential()) return; // the winner was reopened and will finish again
-    } else if (this.crews.size === 2 && !this.selection) {
-      await this.score();
+    let reopened = false;
+    try {
+      const timeLeft = !fc.state.budget.exceeded() && !fc.state.budget.pastDeadline();
+      if (this.crews.size === 2 && this.crossRounds < 1 && timeLeft) {
+        this.crossRounds += 1;
+        reopened = await this.differential(); // the winner was reopened and will finish again
+      } else if (this.crews.size === 2 && !this.selection && timeLeft) {
+        await this.score();
+      }
+    } catch (err) {
+      fc.bus.emit(EV.runError, "conductor", { message: err instanceof Error ? err.message : String(err), where: "comparing candidates" });
+    } finally {
+      if (!reopened) {
+        this.settleSelection();
+        clearInterval(this.watchdog);
+        this.resolveFinish(this.results);
+      }
     }
-    clearInterval(this.watchdog);
-    this.resolveFinish(this.results);
+  }
+
+  /**
+   * After a differential round the reopened winner may come back worse. Prefer, in order: a green
+   * new result, a green result of the other team, the winner's green result from before the round;
+   * otherwise the one with the fewest failing tests.
+   */
+  private settleSelection(): void {
+    if (this.crews.size !== 2) return;
+    const winner = this.selection?.winner;
+    const pre = winner ? this.preRound.get(winner) : undefined;
+    const ranked = [...this.results, ...(pre ? [pre] : [])].sort(
+      (a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length,
+    );
+    const pick = ranked.find((r) => r.candidate === winner && r !== pre && r.status.green) ?? ranked[0];
+    if (!pick) return;
+    if (pick === pre) this.results.splice(this.results.findIndex((r) => r.candidate === pick.candidate), 1, pre);
+    if (!this.selection || pick.candidate !== this.selection.winner || pick === pre) {
+      const reason = pick === pre ? `${pick.candidate}'s result from before the cross-check (the fixed one did not go green)` : `${pick.candidate}: ${pick.status.green ? "green" : "fewest failing tests"}`;
+      this.selection = { winner: pick.candidate, reason, scores: this.selection?.scores ?? [] };
+    }
   }
 
   private async score(): Promise<Map<string, VitestResult[]>> {
@@ -351,17 +390,21 @@ export class Conductor extends Actor {
     const codeWrong = failures.filter((_, i) => verdicts[i]?.ruling === "code-wrong");
     if (codeWrong.length === 0 || !fc.state.ledger) return false;
     const cand = fc.state.candidate(winner);
+    const routed = triage({ tsc: [], tests: codeWrong }, cand, fc.state.ledger, () => undefined);
+    if (!routed.some((r) => r.to.kind === "task")) return false;
+    // Only the files whose failures reach a task are adopted, and only when no test in them was ruled wrong.
+    const routedTests = new Set(routed.filter((r) => r.to.kind === "task").flatMap((r) => r.testIds));
     const disputedFiles = new Set(failures.filter((_, i) => verdicts[i]?.ruling !== "code-wrong").map((f) => f.file));
-    for (const file of new Set(codeWrong.map((f) => f.file))) {
-      if (disputedFiles.has(file)) continue;
+    for (const file of new Set(codeWrong.filter((f) => routedTests.has(`${f.file} > ${f.title}`)).map((f) => f.file))) {
+      if (disputedFiles.has(file) || !sourceOf(file)) continue;
       const path = `test/acceptance/cross-${file.split("__").slice(1).join("__")}`;
       cand.workspace.read("conductor", path);
       cand.workspace.commit("conductor", path, sourceOf(file));
     }
-    const routed = triage({ tsc: [], tests: codeWrong }, cand, fc.state.ledger, () => undefined);
-    if (!routed.some((r) => r.to.kind === "task")) return false;
+    const index = this.results.findIndex((r) => r.candidate === winner);
+    this.preRound.set(winner, this.results[index]);
     this.finished.delete(winner);
-    this.results.splice(this.results.findIndex((r) => r.candidate === winner), 1);
+    this.results.splice(index, 1);
     const note = "(This failure comes from the other team's independent test; the arbiter ruled the code wrong. The test is now part of your suite.)";
     for (const r of routed) {
       if (r.to.kind !== "task") continue;

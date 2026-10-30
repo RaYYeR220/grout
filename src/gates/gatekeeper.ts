@@ -66,9 +66,13 @@ export function makeGate(ctx: GateContext): InterceptionHandler {
     return t;
   };
 
+  // Arbiters settle a finished candidate's last disputes; the librarian writes lessons after the deadline.
+  const outlivesFinish = ctx.role === "arbiter" || ctx.role === "utility";
   const stopReason = (): string | undefined =>
     state.stopped.get(ctx.agentId) ??
+    (!outlivesFinish && state.finished.has(ctx.candidate) ? "the run is over" : undefined) ??
     (state.budget.exceeded() ? "budget exhausted" : undefined) ??
+    (ctx.role !== "utility" && state.budget.pastDeadline() ? "deadline reached" : undefined) ??
     (steps > ctx.maxSteps ? `step limit (${ctx.maxSteps}) reached` : undefined);
 
   return {

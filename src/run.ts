@@ -143,8 +143,6 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
 
   const finishes = await conductor.done;
   supervisor.dispose();
-  await librarian.distill().catch(() => undefined);
-  await cloud?.end().catch(() => undefined);
   const best =
     finishes.find((f) => f.candidate === conductor.selection?.winner) ??
     [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];
@@ -164,8 +162,12 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     { runId, title, candidate: best.candidate, status: best.status, reason: best.reason, wallMs, costUsd: state.budget.spent(), agents: state.agents.size, mode, cloudUrl: cloud?.url },
     best.dist,
     { trace: tracer.path, report: reportPath },
+    best.files,
   );
   if (opts.commit) commitOutput(outDir, `factory output: ${title} (run ${runId}, ${best.status.green ? "green" : "incomplete"})`);
+  // Lessons and the cloud upload come after the export: neither may delay the result past a deadline.
+  await librarian.distill().catch(() => undefined);
+  await cloud?.end().catch(() => undefined);
   for (const sb of sandboxes.values()) await sb.dispose();
   return { runId, status: best.status, reason: best.reason, outDir, runDir, costUsd: state.budget.spent(), wallMs, candidate: best.candidate, state };
 }

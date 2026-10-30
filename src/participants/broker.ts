@@ -43,7 +43,7 @@ export class Broker extends Actor {
   private fill(): void {
     const board = this.cand.board;
     const ledger = this.fc.state.ledger;
-    if (!board || !ledger || this.fc.state.budget.exceeded()) return;
+    if (!board || !ledger || this.fc.state.budget.exceeded() || this.fc.state.finished.has(this.opts.candidate)) return;
     if (!this.testsStarted && (!this.opts.sequential || board.allApproved())) this.startTestAuthors();
     for (let i = 1; i <= this.opts.builders; i++) {
       const slot = `builder-${i}`;
@@ -92,7 +92,7 @@ export class Broker extends Actor {
   /** Respawns a test author with a correction (a broken test file, or an arbiter ruling against a test). */
   reviseTests(slot: string, note: string): void {
     const n = this.revisions.get(slot) ?? 0;
-    if (n >= MAX_TEST_REVISIONS) return;
+    if (n >= MAX_TEST_REVISIONS || this.fc.state.finished.has(this.opts.candidate)) return;
     this.revisions.set(slot, n + 1);
     const live = this.fc.state.liveAgents({ candidate: this.opts.candidate, slot, role: "test-author" })[0];
     if (live) {

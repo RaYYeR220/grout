@@ -31,8 +31,9 @@ export class ReviewDesk extends Actor {
     ]);
   }
 
-  private review(taskId: string): void {
+  private review(taskId: string, attempt = 1): void {
     const { fc, candidate } = this;
+    if (fc.state.finished.has(candidate)) return;
     const cand = fc.state.candidate(candidate);
     const board = cand.board!;
     const task = board.tasks().find((t) => t.id === taskId)!;
@@ -43,7 +44,7 @@ export class ReviewDesk extends Actor {
       .filter((r) => r.requirementIds.some((id) => task.requirements.includes(id)))
       .map((r) => `${r.status.toUpperCase()} ${r.title}${r.failure ? `: ${r.failure.split("\n")[0]}` : ""}`)
       .join("\n");
-    spawnAgent(fc, {
+    const h = spawnAgent(fc, {
       role: "reviewer",
       slot: "reviewer",
       candidate,
@@ -68,11 +69,18 @@ export class ReviewDesk extends Actor {
       message: reviewerMessage(task, fc.state.ledger!, files, tests),
       maxSteps: ROLE_LIMITS.reviewer.maxSteps,
     });
+    // A reviewer that ends without a verdict (provider error, stop, plain text) must not leave the task hanging.
+    void h.done.then(() => {
+      if (board.status(taskId) !== "done" || board.leaseOf(taskId)?.generation !== generation || fc.state.finished.has(candidate)) return;
+      if (attempt === 1) return this.review(taskId, 2);
+      board.approve(taskId);
+      fc.bus.emit(EV.taskApproved, "review-desk", { candidate, taskId });
+    });
   }
 
   private arbitrate(d: EventPayloads["test.disputed"]): void {
     const { fc, candidate } = this;
-    if (this.arbiters >= 12) return;
+    if (this.arbiters >= 12 || fc.state.finished.has(candidate)) return;
     this.arbiters += 1;
     const cand = fc.state.candidate(candidate);
     const record = cand.matrix.all().find((r) => r.id === d.testId || r.title === d.testId || d.testId.includes(r.title));
