@@ -1,0 +1,29 @@
+{
+  "name": "grout",
+  "version": "0.1.0",
+  "description": "A software factory: concurrent agents on one versioned codebase turn a one-page spec into a tested TypeScript project.",
+  "type": "module",
+  "bin": {
+    "grout": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@mozaik-ai/core": "4.2.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  }
+}
