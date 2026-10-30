@@ -9,11 +9,16 @@ import type { TaskSpec } from "../state/blueprint.js";
 
 export type BrokerOptions = { candidate: string; builders: number; testAuthors: number; sequential: boolean; builderModel?: string };
 
+export const MAX_LEASES_PER_TASK = 8;
+export const MAX_TEST_REVISIONS = 3;
+export const PROVIDER_BACKOFF_MS = 20_000;
+
 /** Who works on what: leases ready tasks to idle builder slots and runs the test authors. */
 export class Broker extends Actor {
   private readonly busySlots = new Map<string, string>(); // slot → agentId
   private readonly authorSlots = new Map<string, string[]>(); // test-author slot → requirement ids
   private testsStarted = false;
+  private readonly revisions = new Map<string, number>();
 
   constructor(
     private readonly fc: FactoryCtx,
@@ -43,7 +48,7 @@ export class Broker extends Actor {
     for (let i = 1; i <= this.opts.builders; i++) {
       const slot = `builder-${i}`;
       if (this.busySlots.has(slot)) continue;
-      const task = board.ready()[0];
+      const task = board.ready().find((t) => board.leases(t.id) < MAX_LEASES_PER_TASK);
       if (!task) return;
       this.spawnBuilder(slot, task);
     }
@@ -86,6 +91,9 @@ export class Broker extends Actor {
 
   /** Respawns a test author with a correction (a broken test file, or an arbiter ruling against a test). */
   reviseTests(slot: string, note: string): void {
+    const n = this.revisions.get(slot) ?? 0;
+    if (n >= MAX_TEST_REVISIONS) return;
+    this.revisions.set(slot, n + 1);
     const live = this.fc.state.liveAgents({ candidate: this.opts.candidate, slot, role: "test-author" })[0];
     if (live) {
       this.fc.state.deliver(live.agentId, "verifier", note);
@@ -146,6 +154,13 @@ export class Broker extends Actor {
     if (this.busySlots.get(p.slot) === p.agentId) this.busySlots.delete(p.slot);
     const board = this.cand.board;
     if (board && p.taskId && board.status(p.taskId) === "leased" && board.leaseOf(p.taskId)?.worker === p.slot) {
+      if (p.answer.startsWith("ERROR: inference failed")) {
+        // The provider failed, not the builder: no attempt is counted, and the next one waits a little.
+        board.reopen(p.taskId, "the previous attempt was cut off by a model provider error", { countAttempt: false });
+        this.fc.bus.emit(EV.taskReopened, `broker-${this.opts.candidate}`, { candidate: this.opts.candidate, taskId: p.taskId, reason: "provider error" });
+        setTimeout(() => this.fill(), PROVIDER_BACKOFF_MS).unref?.();
+        return;
+      }
       board.reopen(p.taskId, `the previous attempt ended without finish_task: ${p.answer.slice(0, 300)}`);
       this.fc.bus.emit(EV.taskReopened, `broker-${this.opts.candidate}`, { candidate: this.opts.candidate, taskId: p.taskId, reason: "attempt ended without finishing" });
       return;

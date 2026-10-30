@@ -6,11 +6,18 @@ import { parseTsc, parseVitestJson, type VitestResult } from "../sandbox/parse.j
 import { requirementIdsOf, type TestRecord } from "../state/test-matrix.js";
 import { triage, type Destination } from "../triage.js";
 import type { Broker } from "./broker.js";
+import type { Board } from "../state/board.js";
 
 export const MAX_ATTEMPTS = 5;
 export const PERSISTENT_AFTER = 3;
 
-export type VerifierRun = { rev: number; pass: number; fail: number; tscErrors: number; at: number };
+export type VerifierRun = { rev: number; pass: number; fail: number; tscErrors: number; at: number; incomplete?: boolean };
+
+/** A run's verdict applies only to work that existed when the run took its snapshot. */
+export function reopenable(board: Board, taskId: string, runRev: number): boolean {
+  const st = board.status(taskId);
+  return (st === "done" || st === "approved") && (board.doneRev(taskId) ?? 0) <= runRev;
+}
 
 /** A test that passed in the previous run and fails now was broken by a recent change: say so. */
 export function markRegressions(previous: ReadonlyMap<string, string>, results: VitestResult[], previousRev: number): VitestResult[] {
@@ -83,6 +90,17 @@ export class Verifier extends Actor {
       for (const r of [tsc, test]) fc.bus.emit(EV.sandboxCommand, this.getId(), { cmd: r.cmd, exitCode: r.exitCode, ms: r.durationMs, timedOut: r.timedOut, candidate });
       const tscErrors = parseTsc(tsc.stdout + tsc.stderr);
       const report = test.outputs[REPORT_PATH];
+      if (test.timedOut || !report) {
+        // No verdict: keep the last complete matrix, and never let this run count toward a release.
+        this.lastRun = { rev, pass: 0, fail: 1, tscErrors: tscErrors.length, at: Date.now(), incomplete: true };
+        fc.bus.emit(EV.testsRan, this.getId(), { candidate, rev, pass: 0, fail: 0, total: 0, tscErrors: tscErrors.length, uncovered: [], ms: Date.now() - started, incomplete: true });
+        const why = test.timedOut
+          ? `the test suite did not finish within ${Math.round(test.durationMs / 1000)} s: a test or the server probably never finishes (a request with no response, a server that is never stopped, a CLI waiting on stdin)`
+          : `the test suite produced no report (it probably failed to start):\n${(test.stdout + test.stderr).slice(-1500)}`;
+        for (const a of fc.state.liveAgents({ candidate })) if (a.role === "builder" || a.role === "test-author") fc.state.deliver(a.agentId, "verifier", why);
+        if (tscErrors.length) this.route(tscErrors, [], rev);
+        return;
+      }
       const previous = new Map(cand.matrix.all().map((t) => [t.id, t.status] as const));
       const results: VitestResult[] = markRegressions(previous, report ? parseVitestJson(report, "", test.stdout + test.stderr) : [], this.lastRun?.rev ?? 0);
       const records: TestRecord[] = results.map((r) => ({
@@ -109,7 +127,7 @@ export class Verifier extends Actor {
         uncovered: cand.matrix.coverage(testable).uncovered,
         ms: Date.now() - started,
       });
-      this.route(tscErrors, results);
+      this.route(tscErrors, results, rev);
     } finally {
       this.running = false;
       if (this.again) {
@@ -130,7 +148,7 @@ export class Verifier extends Actor {
     }
   }
 
-  private route(tsc: ReturnType<typeof parseTsc>, results: VitestResult[]): void {
+  private route(tsc: ReturnType<typeof parseTsc>, results: VitestResult[], runRev: number): void {
     const { fc, candidate } = this;
     const cand = fc.state.candidate(candidate);
     const board = cand.board;
@@ -142,8 +160,7 @@ export class Verifier extends Actor {
         this.broker.reviseTests(r.to.slot, r.message);
         continue;
       }
-      const status = board.status(r.to.taskId);
-      if (status !== "done" && status !== "approved") continue; // being built right now, or not started
+      if (!reopenable(board, r.to.taskId, runRev)) continue; // being built, not started, or finished after this snapshot
       if (board.attempts(r.to.taskId) >= PERSISTENT_AFTER) this.escalate(r.testIds, r.to.taskId);
       if (board.attempts(r.to.taskId) >= MAX_ATTEMPTS) continue;
       board.reopen(r.to.taskId, r.message);

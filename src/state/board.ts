@@ -10,8 +10,10 @@ type Slot = {
   generation: number;
   lease?: Lease;
   attempts: number;
+  leases: number;
   feedback: string[];
   evidence?: string;
+  doneRev?: number;
 };
 
 /** The work market: tasks are offered, leased with a generation, completed, reviewed, reopened. */
@@ -21,7 +23,7 @@ export class Board {
 
   constructor(tasks: TaskSpec[]) {
     for (const spec of tasks) {
-      this.slots.set(spec.id, { spec, status: "open", generation: 0, attempts: 0, feedback: [] });
+      this.slots.set(spec.id, { spec, status: "open", generation: 0, attempts: 0, leases: 0, feedback: [] });
       for (const path of spec.writeSurface) {
         const p = normalizePath(path);
         const prev = this.owners.get(p);
@@ -44,6 +46,7 @@ export class Board {
     const s = this.slot(taskId);
     if (this.status(taskId) !== "ready") throw new Error(`task ${taskId} is ${this.status(taskId)}, not ready`);
     s.generation += 1;
+    s.leases += 1;
     s.status = "leased";
     s.lease = { taskId, worker, generation: s.generation };
     return s.lease;
@@ -54,23 +57,39 @@ export class Board {
     return !!s && s.status === "leased" && s.generation === lease.generation;
   }
 
-  complete(lease: Lease, evidence: string): boolean {
+  /** `rev` is the workspace revision the task was finished at, so older verdicts cannot reopen it. */
+  complete(lease: Lease, evidence: string, rev?: number): boolean {
     if (!this.isCurrent(lease)) return false;
     const s = this.slot(lease.taskId);
     s.status = "done";
     s.evidence = evidence;
+    s.doneRev = rev;
     return true;
+  }
+
+  doneRev(taskId: string): number | undefined {
+    return this.slot(taskId).doneRev;
+  }
+
+  leases(taskId: string): number {
+    return this.slot(taskId).leases;
+  }
+
+  /** Feedback for the next attempt without reopening the task (it may be in progress or not started). */
+  note(taskId: string, feedback: string): void {
+    this.slot(taskId).feedback.push(feedback);
   }
 
   approve(taskId: string): void {
     this.slot(taskId).status = "approved";
   }
 
-  reopen(taskId: string, feedback: string): void {
+  /** A provider failure or another task's request is not the task's own failed attempt: countAttempt false. */
+  reopen(taskId: string, feedback: string, opts: { countAttempt?: boolean } = {}): void {
     const s = this.slot(taskId);
     s.status = "open";
     s.lease = undefined;
-    s.attempts += 1;
+    if (opts.countAttempt !== false) s.attempts += 1;
     s.feedback.push(feedback);
   }
 

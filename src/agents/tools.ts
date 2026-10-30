@@ -138,7 +138,7 @@ export function finishTaskTool(t: ToolCtx): Tool {
   return defineTool("finish_task", "Mark your task done once typecheck passes and your tests pass. A reviewer and the full test suite check it next.", z.object({ summary: z.string() }), ({ summary }) => {
     const board = t.fc.state.candidate(t.candidate).board;
     if (!board || !t.lease || !t.taskId) return "ERROR: you have no task lease.";
-    if (!board.complete(t.lease, summary)) return `ERROR: your lease on ${t.taskId} is no longer current; stop.`;
+    if (!board.complete(t.lease, summary, t.fc.state.candidate(t.candidate).workspace.rev)) return `ERROR: your lease on ${t.taskId} is no longer current; stop.`;
     t.fc.bus.emit(EV.taskDone, t.self.id, { candidate: t.candidate, taskId: t.taskId, worker: t.slot, summary });
     return `OK: ${t.taskId} is done and goes to review. Reply with a one-line summary now.`;
   });
@@ -154,8 +154,14 @@ export function requestChangeTool(t: ToolCtx): Tool {
       const owner = cand.board?.ownerOf(path);
       const from = labelOf(t.fc.state, t.self.id);
       const holder = owner && owner !== "shared" ? t.fc.state.liveAgents({ candidate: t.candidate, taskId: owner, role: "builder" })[0] : undefined;
+      const note = `change requested by ${from} for ${path}: ${change}`;
       if (holder) t.fc.state.deliver(holder.agentId, from, `change request for ${path}: ${change}`);
-      else if (owner && owner !== "shared") cand.board?.reopen(owner, `change requested by ${from} for ${path}: ${change}`);
+      else if (owner && owner !== "shared" && cand.board) {
+        const st = cand.board.status(owner);
+        // A finished task is reopened for the change (not counted as its own failed attempt); otherwise it waits as feedback.
+        if (st === "done" || st === "approved") cand.board.reopen(owner, note, { countAttempt: false });
+        else cand.board.note(owner, note);
+      }
       const to = holder ? labelOf(t.fc.state, holder.agentId) : owner ? `task ${owner}` : "conductor";
       t.fc.bus.emit(EV.changeRequested, t.self.id, { candidate: t.candidate, path, change, from, to });
       return `OK: request sent to ${to}. Continue with your own files.`;

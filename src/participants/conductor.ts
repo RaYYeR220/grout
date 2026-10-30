@@ -204,6 +204,7 @@ export class Conductor extends Actor {
       if (crew.verifier.idle) crew.verifier.request();
       return;
     }
+    if (crew.verifier.lastRun.incomplete) return; // the suite did not finish at this revision: not releasable
     const status = releaseCheck(cand, ledger);
     if (!status.green) {
       this.reviseUncovered(candidate, status.uncovered);
