@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { CandidateState, FactoryState, ReleaseStatus } from "./state/factory-state.js";
 import { harnessInvocation } from "./template/scaffold.js";
@@ -76,6 +76,12 @@ export function exportRun(
   artifacts: { trace?: string; report?: string },
   files: Map<string, string> = cand.workspace.snapshot(),
 ): void {
+  // A re-run replaces the previous output entirely (leftover modules or tests would change the build);
+  // anything that is not a previous output is never touched.
+  if (existsSync(outDir) && readdirSync(outDir).length > 0) {
+    if (!existsSync(join(outDir, "RUN.md"))) throw new Error(`${outDir} is not empty and is not a previous output of this factory; choose another --out`);
+    for (const entry of readdirSync(outDir)) if (entry !== ".git") rmSync(join(outDir, entry), { recursive: true, force: true });
+  }
   mkdirSync(outDir, { recursive: true });
   const write = (rel: string, content: string) => {
     const abs = join(outDir, rel);

@@ -283,7 +283,13 @@ export class Conductor extends Actor {
     if (!file || !existsSync(file)) return;
     const lines = readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
     for (const raw of lines.slice(this.nudgesSeen)) {
-      const { at, text, to } = JSON.parse(raw) as { at: number; text: string; to?: string };
+      let nudge: { at: number; text: string; to?: string };
+      try {
+        nudge = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      const { at, text, to } = nudge;
       this.fc.state.humanSteps.push({ at, kind: "nudge", text });
       this.fc.bus.emit(EV.humanNudge, "human", { text, to });
       for (const a of this.fc.state.liveAgents()) if (!to || a.slot === to) this.fc.state.deliver(a.agentId, "human", text);

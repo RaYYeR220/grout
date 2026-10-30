@@ -50,6 +50,7 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
   const reqs: ReqRow[] = [];
   const out: Omit<ReportModel, "run" | "lanes" | "tasks" | "requirements"> = { stale: [], gates: [], events: [], tests: [], costByRole: {}, costByModel: {} };
   let release: P | undefined;
+  let finished = false;
   let calls = 0;
   let inTok = 0;
   let outTok = 0;
@@ -57,9 +58,12 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
   let humanSteps = 0;
   let estimated = 0;
   const who = (l: TraceLine) => (l.slot ? `${l.slot}${l.taskId ? `(${l.taskId})` : ""}` : l.producer);
+  const multi = ((started?.candidates as string[] | undefined)?.length ?? 1) > 1;
+  // With two teams each has its own T1: tasks are keyed by team.
   const task = (id: string, candidate = "A") => {
-    let t = tasks.get(id);
-    if (!t) tasks.set(id, (t = { taskId: id, title: id, candidate, attempts: 0, costUsd: 0, status: "open", reopens: [] }));
+    const key = multi ? `${candidate}:${id}` : id;
+    let t = tasks.get(key);
+    if (!t) tasks.set(key, (t = { taskId: key, title: id, candidate, attempts: 0, costUsd: 0, status: "open", reopens: [] }));
     return t;
   };
 
@@ -85,7 +89,7 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
           s.costUsd += p.costUsd ?? 0;
           s.calls += 1;
           out.costByRole[s.role] = (out.costByRole[s.role] ?? 0) + (p.costUsd ?? 0);
-          if (s.taskId) task(s.taskId, l.candidate).costUsd += p.costUsd ?? 0;
+          if (s.taskId) task(s.taskId, l.candidate ?? "A").costUsd += p.costUsd ?? 0;
         }
         out.costByModel[p.model] = (out.costByModel[p.model] ?? 0) + (p.costUsd ?? 0);
         break;
@@ -141,7 +145,12 @@ export function buildReportModel(lines: TraceLine[]): ReportModel {
         out.events.push({ t: l.t, kind: "human", detail: p.text });
         break;
       case "release.checked":
-        release = p;
+        if (!finished) release = p;
+        break;
+      case "run.finished":
+        // The exported candidate's status is the run's status.
+        finished = true;
+        release = { ...p.status, candidate: p.candidate };
         break;
     }
   }
