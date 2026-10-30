@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { FunctionCallOutputItem, UserMessageItem, type Tool } from "@mozaik-ai/core";
+import { FunctionCallItem, FunctionCallOutputItem, UserMessageItem, type Tool } from "@mozaik-ai/core";
 import { makeGate } from "../../src/gates/gatekeeper.js";
 import { decide } from "../../src/gates/policies.js";
 import { Board } from "../../src/state/board.js";
@@ -102,6 +102,28 @@ describe("gate in a live loop", () => {
     const gate = makeGate({ agentId: "a", role: "architect", candidate: "A", state, maxSteps: 10 });
     await runRawAgent(rt, { name: "a", tools: [echoTool("list_files", calls)], message: "go", gate });
     expect(calls).toEqual(["list_files:{}"]);
+  });
+
+  test("a refused call is kept in the context with valid arguments, never the broken string", async () => {
+    let calls: string[] = [];
+    const { rt, state } = makeRuntime((input, turn) => {
+      if (turn === 0) return toolCall("write_file", '{"path":"test/a.test.ts","content":"imp');
+      calls = input.context.getItems().filter((i) => i instanceof FunctionCallItem).map((i) => (i as FunctionCallItem).args);
+      return say("done");
+    });
+    const gate = makeGate({ agentId: "ta", role: "test-author", candidate: "A", state, maxSteps: 10 });
+    await runRawAgent(rt, { name: "ta", tools: [echoTool("write_file", [])], message: "go", gate });
+    expect(calls).toEqual(["{}"]);
+  });
+
+  test("a call without any arguments field does not kill the loop", async () => {
+    const tools: string[] = [];
+    const { rt, state } = makeRuntime((_input, turn) =>
+      turn === 0 ? { items: [FunctionCallItem.rehydrate({ callId: "c1", name: "list_files", args: undefined as unknown as string })], tokenUsage: undefined, rowResponse: {} } : say("done"),
+    );
+    const gate = makeGate({ agentId: "a", role: "architect", candidate: "A", state, maxSteps: 10 });
+    expect(await runRawAgent(rt, { name: "a", tools: [echoTool("list_files", tools)], message: "go", gate })).toBe("done");
+    expect(tools).toEqual(["list_files:{}"]);
   });
 
   test("inbox messages reach a running agent before its next inference", async () => {

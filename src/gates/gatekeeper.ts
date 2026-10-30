@@ -35,8 +35,17 @@ export function makeGate(ctx: GateContext): InterceptionHandler {
 
   const refuse = (t: Extract<ExecutableTransition, { nextStateId: "function_call" }>, rule: RuleId, message: string): ExecutableTransition => {
     const { call, inferenceInput } = t.input;
+    // The refused call goes back into the context with valid JSON arguments: providers reject a
+    // conversation that contains an unparseable tool input, which would fail every later turn.
+    let args = "{}";
+    try {
+      JSON.parse(call.args ?? "");
+      args = call.args;
+    } catch {
+      /* keep {} */
+    }
     inferenceInput.context.addContextItems([
-      FunctionCallItem.rehydrate({ callId: call.callId, name: call.name, args: call.args }),
+      FunctionCallItem.rehydrate({ callId: call.callId, name: call.name, args }),
       FunctionCallOutputItem.create(call.callId, `REJECTED [${rule}]: ${message}`),
     ]);
     ctx.bus?.emit(EV.gateRejected, ctx.agentId, { candidate: ctx.candidate, agentId: ctx.agentId, tool: call.name, rule, message });
@@ -67,7 +76,7 @@ export function makeGate(ctx: GateContext): InterceptionHandler {
     handle: async (t) => {
       if (t.nextStateId === "inference" || t.nextStateId === "inference_streaming") return beforeInference(t);
       if (t.nextStateId === "function_call") {
-        if (t.input.call.args.trim() === "") {
+        if ((t.input.call.args ?? "").trim() === "") {
           // Models send "" for a tool with no required arguments; the runtime would fail to parse it.
           const { callId, name } = t.input.call;
           t = { nextStateId: "function_call", input: { ...t.input, call: FunctionCallItem.rehydrate({ callId, name, args: "{}" }) } };
