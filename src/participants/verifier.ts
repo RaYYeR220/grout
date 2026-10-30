@@ -8,6 +8,7 @@ import { triage } from "../triage.js";
 import type { Broker } from "./broker.js";
 
 export const MAX_ATTEMPTS = 5;
+export const PERSISTENT_AFTER = 3;
 
 export type VerifierRun = { rev: number; pass: number; fail: number; tscErrors: number; at: number };
 
@@ -104,6 +105,17 @@ export class Verifier extends Actor {
     }
   }
 
+  private readonly escalated = new Set<string>();
+
+  /** A test that keeps failing after several attempts goes to the arbiter: maybe the test, not the code, is wrong. */
+  private escalate(testIds: string[], taskId: string): void {
+    for (const testId of testIds) {
+      if (this.escalated.has(testId)) continue;
+      this.escalated.add(testId);
+      this.fc.bus.emit(EV.testDisputed, this.getId(), { candidate: this.candidate, testId, reason: `persistent failure: task ${taskId} has been reopened ${PERSISTENT_AFTER}+ times for it`, by: "verifier" });
+    }
+  }
+
   private route(tsc: ReturnType<typeof parseTsc>, results: VitestResult[]): void {
     const { fc, candidate } = this;
     const cand = fc.state.candidate(candidate);
@@ -118,6 +130,7 @@ export class Verifier extends Actor {
       }
       const status = board.status(r.to.taskId);
       if (status !== "done" && status !== "approved") continue; // being built right now, or not started
+      if (board.attempts(r.to.taskId) >= PERSISTENT_AFTER) this.escalate(r.testIds, r.to.taskId);
       if (board.attempts(r.to.taskId) >= MAX_ATTEMPTS) continue;
       board.reopen(r.to.taskId, r.message);
       fc.bus.emit(EV.testFailed, this.getId(), { candidate, testId: r.testIds[0], requirementIds: r.requirementIds, to: r.to.taskId, message: r.message.slice(0, 500) });

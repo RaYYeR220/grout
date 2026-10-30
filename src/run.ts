@@ -7,6 +7,9 @@ import { pickPreset, type Quality, type Tier } from "./llm/presets.js";
 import { buildModels } from "./llm/providers.js";
 import { Broker } from "./participants/broker.js";
 import { Conductor } from "./participants/conductor.js";
+import { withEnvDoctor } from "./participants/env-doctor.js";
+import { Supervisor } from "./participants/supervisor.js";
+import { EV } from "./bus/events.js";
 import { ReviewDesk } from "./participants/review.js";
 import { Tracer } from "./participants/tracer.js";
 import { Verifier } from "./participants/verifier.js";
@@ -81,7 +84,8 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     runner = new GuardedRunner(inner, { timeoutMs: 240_000, retries: 3 });
   }
 
-  const sandbox = opts.sandboxOverride ?? (await createSandbox(opts.sandbox ?? "auto"));
+  let reportFix: (pattern: string, action: string, attempt: number) => void = () => {};
+  const sandbox = withEnvDoctor(opts.sandboxOverride ?? (await createSandbox(opts.sandbox ?? "auto")), (p, a, n) => reportFix(p, a, n));
   await sandbox.init(runId);
 
   const state = new FactoryState({
@@ -95,6 +99,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
   if (opts.note) state.humanSteps.push({ at: started, kind: "between-runs-fix", text: opts.note });
 
   const fc = createFactory({ state, runner, models, maxTokens: MAX_TOKENS, sandbox });
+  reportFix = (pattern, action, attempt) => fc.bus.emit(EV.envRemediated, "env-doctor", { pattern, action, attempt });
   const tracer = new Tracer(fc, join(runDir, "trace.jsonl"));
   fc.rt.join(tracer);
   opts.observe?.(fc);
@@ -114,11 +119,14 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     fc.rt.join(new ReviewDesk(fc, id, broker));
     crews.set(id, { broker, verifier });
   }
-  const conductor = new Conductor(fc, crews, { title, mode });
+  const supervisor = new Supervisor(fc);
+  fc.rt.join(supervisor);
+  const conductor = new Conductor(fc, crews, { title, mode, runDir });
   fc.rt.join(conductor);
   conductor.start();
 
   const finishes = await conductor.done;
+  supervisor.dispose();
   const best = [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];
   const cand = state.candidate(best.candidate);
   const wallMs = Date.now() - started;

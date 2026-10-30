@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Actor } from "../bus/actor.js";
 import { EV } from "../bus/events.js";
 import { ANALYST, analystMessage, architectInstruction, architectMessage, renderLedger } from "../agents/prompts.js";
@@ -44,11 +46,12 @@ export class Conductor extends Actor {
   private readonly results: Finish[] = [];
   private watchdog?: NodeJS.Timeout;
   private lastActivity = Date.now();
+  private nudgesSeen = 0;
 
   constructor(
     private readonly fc: FactoryCtx,
     private readonly crews: Map<string, Crew>,
-    private readonly opts: { title: string; mode: string; architectModel?: string },
+    private readonly opts: { title: string; mode: string; runDir?: string; architectModel?: string },
   ) {
     super("conductor");
     this.setHandlers([
@@ -231,6 +234,7 @@ export class Conductor extends Actor {
 
   /** No agent alive and nothing changing: the run is stuck, so it ends honestly instead of hanging. */
   private tick(): void {
+    this.pollNudges();
     for (const c of this.crews.keys()) {
       if (this.finished.has(c) || this.checking.has(c)) continue;
       if (this.fc.state.budget.pastDeadline()) {
@@ -241,6 +245,20 @@ export class Conductor extends Actor {
       const crew = this.crews.get(c)!;
       if (live === 0 && crew.verifier.idle && Date.now() - this.lastActivity > 45_000) void this.finish(c, "stalled: no agent is working and the release gate is still red");
     }
+  }
+
+  /** The only door for a human mid-run: `grout nudge` appends here; every nudge is delivered and logged. */
+  pollNudges(): void {
+    const file = this.opts.runDir ? join(this.opts.runDir, "nudges.jsonl") : undefined;
+    if (!file || !existsSync(file)) return;
+    const lines = readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean);
+    for (const raw of lines.slice(this.nudgesSeen)) {
+      const { at, text, to } = JSON.parse(raw) as { at: number; text: string; to?: string };
+      this.fc.state.humanSteps.push({ at, kind: "nudge", text });
+      this.fc.bus.emit(EV.humanNudge, "human", { text, to });
+      for (const a of this.fc.state.liveAgents()) if (!to || a.slot === to) this.fc.state.deliver(a.agentId, "human", text);
+    }
+    this.nudgesSeen = lines.length;
   }
 
   private async finish(candidate: string, reason: string, cleanRoom?: ReleaseStatus["cleanRoom"], dist: Record<string, string> = {}): Promise<void> {
