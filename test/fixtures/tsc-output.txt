@@ -1,0 +1,2 @@
+src/add.ts(2,14): error TS2322: Type 'string' is not assignable to type 'number'.
+test/broken.test.ts(2,22): error TS2307: Cannot find module '../src/missing.js' or its corresponding type declarations.
