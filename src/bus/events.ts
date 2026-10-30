@@ -34,6 +34,8 @@ export const EV = {
   humanNudge: "human.nudge",
   runFinished: "run.finished",
   runError: "run.error",
+  lessonsRecalled: "lessons.recalled",
+  lessonsStored: "lessons.stored",
 } as const;
 
 export type EventType = (typeof EV)[keyof typeof EV];
@@ -73,6 +75,8 @@ export type EventPayloads = {
   "human.nudge": { text: string; to?: string };
   "run.finished": Cand & { status: ReleaseStatus; outDir: string };
   "run.error": { message: string; where: string };
+  "lessons.recalled": { count: number; store: string };
+  "lessons.stored": { count: number; store: string };
 };
 
 export type TypedEvent<K extends EventType> = SemanticEvent<K, EventPayloads[K]>;

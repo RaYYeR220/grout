@@ -9,6 +9,8 @@ import { Broker } from "./participants/broker.js";
 import { Conductor } from "./participants/conductor.js";
 import { withEnvDoctor } from "./participants/env-doctor.js";
 import { Supervisor } from "./participants/supervisor.js";
+import { Librarian } from "./participants/librarian.js";
+import { createMemoryStore, type MemoryStore } from "./memory/store.js";
 import { EV } from "./bus/events.js";
 import { ReviewDesk } from "./participants/review.js";
 import { Tracer } from "./participants/tracer.js";
@@ -42,6 +44,7 @@ export type RunOptions = {
   runnerOverride?: InferenceRunner;
   makeSandbox?: () => Sandbox;
   verifierDebounceMs?: number;
+  memory?: MemoryStore;
   /** Extra participants (the live log) join the runtime before the run starts. */
   observe?: (fc: FactoryCtx) => void;
 };
@@ -127,6 +130,9 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
     fc.rt.join(new ReviewDesk(fc, id, broker));
     crews.set(id, { broker, verifier });
   }
+  const librarian = new Librarian(fc, opts.memory ?? createMemoryStore(env));
+  fc.rt.join(librarian);
+  await librarian.recall();
   const supervisor = new Supervisor(fc);
   fc.rt.join(supervisor);
   const conductor = new Conductor(fc, crews, { title, mode, runDir });
@@ -135,6 +141,7 @@ export async function runFactory(opts: RunOptions): Promise<RunResult> {
 
   const finishes = await conductor.done;
   supervisor.dispose();
+  await librarian.distill().catch(() => undefined);
   const best =
     finishes.find((f) => f.candidate === conductor.selection?.winner) ??
     [...finishes].sort((a, b) => Number(b.status.green) - Number(a.status.green) || a.status.failingTests.length - b.status.failingTests.length)[0];

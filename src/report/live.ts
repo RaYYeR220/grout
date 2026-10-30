@@ -62,6 +62,10 @@ export function formatEvent(type: string, who: string, p: P): string | undefined
       return `${p.green ? "★ GREEN" : "✗ not green"} [${p.candidate}]${p.green ? "" : `: failing ${p.failingTests?.length ?? 0}, untested ${p.uncovered?.length ?? 0}, unapproved ${p.unapproved?.length ?? 0}`}`;
     case EV.candidatesCompared:
       return `⇄ candidates compared: ${p.winner} wins (${p.reason})`;
+    case EV.lessonsRecalled:
+      return `◇ memory (${p.store}): ${p.count} lesson(s) from earlier runs recalled`;
+    case EV.lessonsStored:
+      return `◇ memory (${p.store}): ${p.count} lesson(s) stored for later runs`;
     case EV.humanNudge:
       return `✋ human: ${short(p.text, 80)}`;
     default:
