@@ -11,5 +11,6 @@ Each output contains:
 
 ## Runs
 
-| spec | run | status | hidden tests (ours) | human steps | time | cost |
+| spec | run | status | our independent black-box suite | human steps | time | cost |
 |---|---|---|---|---|---|---|
+| box-office | 2026-10-31T17-04-28, 18:04–18:19 CET, `--candidates 2 --quality quality` | green (team B selected) | independent suite `bench/acceptance/box-office`: 68/68 | 0 | 907 s | $9.60 |
